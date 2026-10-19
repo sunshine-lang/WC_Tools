@@ -8,14 +8,12 @@ from flask import Flask, request, jsonify, render_template, send_file, redirect
 import logging
 from flask import cli
 
-from core_tools import RODataMatcher, TermScanner, TMMatcher, TagCleaner, TermFilter, KeyClassifier, ContextProcessor, QAChecker
+from core_tools import TermScanner, TMMatcher, TermFilter, KeyClassifier, ContextProcessor, QAChecker
 from core_tools.context_processor import validate_material_name, CONTEXT_POLICY
 from core_tools.term_scanner import TERM_POLICY
 from core_tools.tm_matcher import TM_POLICY
+from core_tools.term_filter import FILTER_POLICY
 from core_tools.qa_checker import QA_POLICY
-
-tag_cleaner = TagCleaner()
-term_filter_tool = TermFilter()
 
 # ==========================================
 # Flask 初始化 & 屏蔽系统级输出 (Werkzeug)
@@ -90,7 +88,6 @@ def get_tm_db_status():
 
 
 tasks = {}
-ro_data_matcher = RODataMatcher()
 context_processor = ContextProcessor()
 
 @app.route('/')
@@ -104,12 +101,6 @@ def page_key_classifier():
     return render_template('key_classifier.html', active_page='key_classifier')
 
 
-# WC 不使用 RO 在线数据库，保留实现但暂停注册页面和接口。
-# @app.route('/skill')
-def page_skill():
-    return render_template('skill.html', active_page='skill')
-
-
 @app.route('/term')
 def page_term():
     return render_template('term.html', active_page='term', term_db=get_term_db_status())
@@ -120,16 +111,13 @@ def page_tm():
     return render_template('tm.html', active_page='tm', tm_db=get_tm_db_status())
 
 
-# WC 保留原文标签周围的空格，不启用批量清洗。
-# @app.route('/tag_clean')
-def page_tag_clean():
-    return render_template('tag_clean.html', active_page='tag_clean')
-
-
-# 当前降噪提示词针对 RO 中英术语，暂不用于 WC。
-# @app.route('/term_filter')
+@app.route('/term_filter')
 def page_term_filter():
-    return render_template('term_filter.html', active_page='term_filter')
+    try:
+        model = TermFilter().status()
+    except Exception:
+        model = {'ready': False, 'model': '', 'error': '本机模型配置无法读取，请检查后刷新页面'}
+    return render_template('term_filter.html', active_page='term_filter', model=model)
 
 
 @app.route('/api/key_rules', methods=['GET', 'POST'])
@@ -176,51 +164,40 @@ def classification_result(task_id):
 
 
 # ----------------- 功能处理 API -----------------
-# @app.route('/upload/tag_clean', methods=['POST'])
-def upload_tag_clean():
-    file = request.files.get('file')
-    if not file or file.filename == '': return jsonify({'error': '未选择文件'}), 400
-    original_name = os.path.splitext(file.filename)[0]
-    dl_name = f"{original_name}_cleaned.csv"
-    task_id = str(uuid.uuid4())
-    input_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}_in.csv")
-    output_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}_out.csv")
-    file.save(input_path)
-    tasks[task_id] = {'progress': 0, 'status': '等待处理...', 'state': 'processing', 'dl_name': dl_name}
-    threading.Thread(target=tag_cleaner.process, args=(input_path, output_path, tasks, task_id)).start()
-    return jsonify({'task_id': task_id})
-
-
-# @app.route('/upload/term_filter', methods=['POST'])
+@app.route('/upload/term_filter', methods=['POST'])
 def upload_term_filter():
     file = request.files.get('file')
-    if not file or file.filename == '': return jsonify({'error': '未选择文件'}), 400
-    original_name = os.path.splitext(file.filename)[0]
-    dl_name = f"{original_name}_filtered.csv"
+    if not file or not file.filename:
+        return jsonify({'error': '请选择第三步下载的 XLSX 文件'}), 400
+    name = file.filename.replace(chr(92), '/').rsplit('/', 1)[-1]
+    if os.path.splitext(name)[1].lower() != '.xlsx':
+        return jsonify({'error': '请上传第三步下载的 XLSX 文件'}), 400
+    try:
+        validate_material_name(name)
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    try:
+        tool = TermFilter()
+    except Exception:
+        return jsonify({'error': '本机模型配置无法读取，请检查后重试'}), 400
+    if not tool.status()['ready']:
+        return jsonify({'error': '请先在本机配置有效的模型接口、模型名称和 API Key'}), 400
     task_id = str(uuid.uuid4())
-    input_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}_in.csv")
-    output_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}_out.csv")
+    input_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{task_id}_filter_in.xlsx')
+    output_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{task_id}_filtered.xlsx')
     file.save(input_path)
-    tasks[task_id] = {'progress': 0, 'status': '等待处理...', 'state': 'processing', 'dl_name': dl_name}
-    threading.Thread(target=term_filter_tool.process, args=(input_path, output_path, tasks, task_id)).start()
+    tasks[task_id] = {'progress': 0, 'status': '等待语境筛选...', 'state': 'processing',
+                      'input_name': name, 'dl_name': os.path.splitext(name)[0] + '_filtered.xlsx'}
+    threading.Thread(target=tool.process, args=(input_path, output_path, tasks, task_id)).start()
     return jsonify({'task_id': task_id})
 
 
-# @app.route('/upload/skill', methods=['POST'])
-def upload_skill():
-    file = request.files.get('file')
-    search_type = request.form.get('search_type', 'skill')
-    if not file or file.filename == '': return jsonify({'error': '未选择文件'}), 400
-    original_name = os.path.splitext(file.filename)[0]
-    dl_name = f"{original_name}_match.csv"
-    task_id = str(uuid.uuid4())
-    input_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}_in.csv")
-    output_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{task_id}_out.csv")
-    file.save(input_path)
-    tasks[task_id] = {'progress': 0, 'status': '等待处理...', 'state': 'processing', 'dl_name': dl_name}
-    threading.Thread(target=ro_data_matcher.process,
-                     args=(input_path, output_path, search_type, tasks, task_id)).start()
-    return jsonify({'task_id': task_id})
+@app.route('/api/term_filter/<task_id>')
+def term_filter_result(task_id):
+    task = tasks.get(task_id, {})
+    if task.get('state') != 'completed' or task.get('filter_policy') != FILTER_POLICY:
+        return jsonify({'error': '术语筛选结果不存在或尚未完成'}), 404
+    return jsonify({name: task[name] for name in ('records', 'counts', 'term_counts', 'error_count', 'model_requests', 'model')})
 
 
 @app.route('/update/term_db', methods=['POST'])
@@ -323,10 +300,10 @@ def update_tm_db():
 def upload_tm():
     file = request.files.get('trans_file')
     if not file or not file.filename:
-        return jsonify({'error': '请选择第三步下载的 XLSX 文件'}), 400
+        return jsonify({'error': '请选择第四步术语筛选下载的 XLSX 文件'}), 400
     name = file.filename.replace(chr(92), '/').rsplit('/', 1)[-1]
     if os.path.splitext(name)[1].lower() != '.xlsx':
-        return jsonify({'error': '请上传第三步下载的 XLSX 文件'}), 400
+        return jsonify({'error': '请上传第四步术语筛选下载的 XLSX 文件'}), 400
     try:
         validate_material_name(name)
         matcher, _ = load_tm_db()

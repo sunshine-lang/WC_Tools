@@ -1,0 +1,14 @@
+#filter-model { margin-bottom: 24px; }
+#filter-preview { margin-top: 24px; }
+#filter-summary { line-height: 1.7; color: var(--text-muted); }
+.filter-table { min-width: 720px; }
+.filter-table th { position: sticky; top: 0; z-index: 1; }
+.filter-table th:first-child { width: 16%; }
+.filter-table th:nth-child(2) { width: 36%; }
+.filter-table th:nth-child(3), .filter-table th:nth-child(4) { width: 24%; }
+.filter-table td:first-child { white-space: pre-wrap; }
+.filter-table td:nth-child(3), .filter-table td:nth-child(4) { white-space: pre-wrap; }
+.filter-table p { margin: 6px 0; }
+.filter-table pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.filter-table details { margin: 8px 0; }
+#choose-file-btn:focus-visible, #start-btn:focus-visible, #download-btn:focus-visible, .filter-table summary:focus-visible { outline: 3px solid var(--primary-color); outline-offset: 3px; }

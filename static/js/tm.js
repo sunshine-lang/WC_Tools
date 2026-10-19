@@ -104,7 +104,7 @@ async function startTm() {
     download.style.display = "none";
     status.style.color = "";
     document.getElementById("progress-bar").style.width = "0%";
-    if (!fileInput.files[0]) { status.textContent = "请先选择第三步下载的术语关联文件"; return; }
+    if (!fileInput.files[0]) { status.textContent = "请先选择第四步下载的术语筛选文件"; return; }
     tmBusy = true;
     syncTmControls();
     try {
@@ -150,7 +150,7 @@ document.addEventListener("DOMContentLoaded", () => {
         syncTmControls();
     };
     fileInput.onchange = () => {
-        document.getElementById("file-name").textContent = fileInput.files[0] ? fileInput.files[0].name : "点击选择第三步下载的术语关联文件（.xlsx）";
+        document.getElementById("file-name").textContent = fileInput.files[0] ? fileInput.files[0].name : "点击选择第四步下载的术语筛选文件（.xlsx）";
         resetTmPreview();
     };
     syncTmControls();

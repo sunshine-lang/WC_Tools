@@ -11,6 +11,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 
 from .context_processor import validate_material_name
 from .key_classifier import EMOTIONS, KeyClassifier
+from .term_filter import FILTER_COLUMNS
 
 
 TM_POLICY = 'wc-en-de-local-v1'
@@ -251,8 +252,8 @@ class TMMatcher:
             for name in (path.name, path.resolve().name, task.get('input_name', '')):
                 validate_material_name(name)
             if path.suffix.lower() != '.xlsx':
-                raise ValueError('请上传第三步下载的 XLSX 文件')
-            task.update(progress=5, status='正在读取第三步结果...')
+                raise ValueError('请上传第四步术语筛选下载的 XLSX 文件')
+            task.update(progress=5, status='正在读取第四步术语筛选结果...')
             book = load_workbook(path)
             records = []
             for sheet in book:
@@ -260,10 +261,11 @@ class TMMatcher:
                 en_col = headers.get('game_text_en') or headers.get('en')
                 if not en_col:
                     continue
-                if not {'分类', 'context', '关联术语'} <= headers.keys():
-                    raise ValueError(f'“{sheet.title}”缺少分类、Context 或关联术语，请上传第三步结果')
+                required = {'分类', 'context', *FILTER_COLUMNS}
+                if not required <= headers.keys():
+                    raise ValueError(f'“{sheet.title}”缺少术语筛选结果，请先完成第四步术语语境筛选')
                 if any(name.startswith('tm参考') for name in headers):
-                    raise ValueError('文件已有 TM 参考列，请上传第三步结果，避免覆盖旧数据')
+                    raise ValueError('文件已有 TM 参考列，请上传第四步结果，避免覆盖旧数据')
                 width = max(c.column for row in sheet for c in row if c.value is not None)
                 col = width + 1
                 header = sheet.cell(1, col, 'TM参考')
@@ -306,7 +308,7 @@ class TMMatcher:
                         task.update(progress=min(90, 10 + int(75 * row / max(sheet.max_row, 1))),
                                     status=f'正在匹配，已处理 {len(records)} 条...')
             if not records:
-                raise ValueError('未找到待处理记录，须包含英文源文和第三步结果列')
+                raise ValueError('未找到待处理记录，须包含英文源文和第四步术语筛选结果列')
             # openpyxl reads empty inline strings as None; restore them before round-tripping.
             for sheet in book:
                 for row in sheet:

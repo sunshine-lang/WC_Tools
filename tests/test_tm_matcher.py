@@ -10,6 +10,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 
 from core_tools.tm_matcher import TMMatcher, context_text, differences
+from core_tools.term_filter import FILTER_COLUMNS
 
 
 class TMMatcherTests(unittest.TestCase):
@@ -42,19 +43,19 @@ class TMMatcherTests(unittest.TestCase):
         w = Workbook()
         s = w.active
         s.title = '活动ui'
-        s.append(headers or ['limit', 'key', 'game_text_cn', 'game_text_en', 'game_text_de', '分类', 'Context', '关联术语'])
+        s.append(headers or ['limit', 'key', 'game_text_cn', 'game_text_en', 'game_text_de', '分类', 'Context', *FILTER_COLUMNS])
         for row in rows or [[30, 'event', '中文', 'Collect {0} stars!', 'KEEP_TARGET', '活动 UI 与商店文案', 'KEEP_CONTEXT', 'KEEP_TERMS']]:
-            s.append(row)
+            s.append(row[:7] + ['KEEP_ACTIVE', ''] if headers is None else row)
         s['D2'].font = Font(bold=True, color='112233')
         s.freeze_panes = 'B2'
         s.row_dimensions[2].height = 42
         w.create_sheet('说明')['A1'] = 'KEEP_OTHER_SHEET'
-        path = self.root / 'step3.xlsx'
+        path = self.root / 'step4.xlsx'
         w.save(path)
         w.close()
         return path
 
-    def run_match(self, path, input_name='step3.xlsx'):
+    def run_match(self, path, input_name='step4.xlsx'):
         task = {'state': 'processing', 'input_name': input_name}
         TMMatcher(self.tm).process(path, self.root / 'result.xlsx', {'t': task}, 't')
         return task
@@ -170,20 +171,37 @@ class TMMatcherTests(unittest.TestCase):
                         self.assertEqual((cell.value, cell.data_type, cell._style), (new.value, new.data_type, new._style))
                 self.assertEqual(sheet.freeze_panes, after[sheet.title].freeze_panes)
                 self.assertEqual(sheet.row_dimensions[2].height, after[sheet.title].row_dimensions[2].height)
-            self.assertEqual(after.active['I1'].value, 'TM参考')
-            self.assertIn('Sammle {0} Sterne!', after.active['I2'].value)
-            self.assertIsNone(after.active['I3'].value)
+            self.assertEqual(after.active['J1'].value, 'TM参考')
+            self.assertIn('Sammle {0} Sterne!', after.active['J2'].value)
+            self.assertIsNone(after.active['J3'].value)
             self.assertEqual(after.active['D4'].data_type, 'f')
         finally:
             before.close(); after.close()
 
     def test_wrong_stage_repeated_output_and_bad_file_have_error_status(self):
-        for headers in [['game_text_en'], ['game_text_en', '分类', 'Context', '关联术语', 'TM参考']]:
+        for headers in [['game_text_en'], ['game_text_en', '分类', 'Context', '关联术语'], ['game_text_en', '分类', 'Context', '关联术语', *FILTER_COLUMNS, 'TM参考']]:
             task = self.run_match(self.source([['Something']], headers))
             self.assertEqual(task['state'], 'error')
         self.assertEqual(self.run_match(self.source(), 'file_done.xlsx')['state'], 'error')
         bad = self.root / 'bad.xlsx'; bad.write_bytes(b'bad')
         self.assertEqual(self.run_match(bad)['state'], 'error')
+
+    def test_accepts_only_active_and_invalid_terms_without_auxiliary_columns(self):
+        path = self.source()
+        book = load_workbook(path)
+        self.assertEqual([c.value for c in book.active[1]][-2:], ['生效术语', '无效术语'])
+        self.assertNotIn('关联术语', [c.value for c in book.active[1]])
+        book.close()
+        task = self.run_match(path)
+        self.assertEqual(task['state'], 'completed', task)
+        self.assertEqual(task['records'][0]['status'], '原文一致')
+        self.assertNotIn('filter_status', task['records'][0])
+        book = load_workbook(path)
+        book.active['H2'] = None
+        book.save(path)
+        book.close()
+        task = self.run_match(path)
+        self.assertEqual(task['state'], 'completed', task)
 
     def test_http_database_replacement_failed_upload_and_snapshot_reload(self):
         import app as server
@@ -212,18 +230,18 @@ class TMMatcherTests(unittest.TestCase):
             self.assertEqual(old.find_matches('Collect {0} stars!')[0]['german'], 'Sammle {0} Sterne!')
             self.assertNotEqual(old.sha256, new.sha256)
 
-    def test_http_third_stage_upload_preview_and_download(self):
+    def test_http_fourth_stage_upload_preview_and_download(self):
         import app as server
         task_id = None
         path = self.source()
         with patch.dict(server.app.config, {'DB_FOLDER': str(self.database), 'UPLOAD_FOLDER': str(self.root)}):
             client = server.app.test_client()
             self.assertEqual(client.get('/tm').status_code, 200)
-            self.assertEqual(client.post('/upload/tm', data={'trans_file': (io.BytesIO(path.read_bytes()), 'step3.xlsx')}).status_code, 400)
+            self.assertEqual(client.post('/upload/tm', data={'trans_file': (io.BytesIO(path.read_bytes()), 'step4.xlsx')}).status_code, 400)
             client.post('/update/tm_db', data={'tm_tmx_file': (io.BytesIO(self.tm.read_bytes()), 'customer.tmx')})
             self.assertEqual(client.post('/upload/tm', data={'trans_file': (io.BytesIO(b'bad'), 'bad.csv')}).status_code, 400)
             try:
-                response = client.post('/upload/tm', data={'trans_file': (io.BytesIO(path.read_bytes()), 'step3.xlsx')})
+                response = client.post('/upload/tm', data={'trans_file': (io.BytesIO(path.read_bytes()), 'step4.xlsx')})
                 task_id = response.json['task_id']
                 for _ in range(100):
                     progress = client.get('/progress/' + task_id).json
@@ -237,7 +255,7 @@ class TMMatcherTests(unittest.TestCase):
                 self.assertIn('Sammle {0} Sterne!', preview.json['records'][0]['reference'])
                 response = client.get('/download/' + task_id)
                 book = load_workbook(io.BytesIO(response.data))
-                self.assertEqual(book.active['I1'].value, 'TM参考')
+                self.assertEqual(book.active['J1'].value, 'TM参考')
                 self.assertEqual(book.active['E2'].value, 'KEEP_TARGET')
                 book.close(); response.close()
                 self.assertEqual(client.get('/api/tm/missing').status_code, 404)
