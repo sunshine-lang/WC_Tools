@@ -1,0 +1,14 @@
+.qa-options { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; }
+.qa-options label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-muted); }
+.qa-options input { padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; font: inherit; min-width: 160px; }
+.qa-table { min-width: 900px; }
+.qa-table th { position: sticky; top: 0; z-index: 1; }
+.qa-table th:nth-child(2) { width: 150px; }
+.qa-table td:nth-child(4) { white-space: pre-wrap; }
+.qa-table .qa-issue { margin: 0 0 6px; font-size: 12px; line-height: 1.6; }
+.qa-table .qa-level { display: inline-block; margin-right: 6px; padding: 1px 7px; border-radius: 4px; font-size: 11px; color: #fff; }
+.qa-table .qa-level-error { background: var(--error-color); }
+.qa-table .qa-level-warning { background: #b45309; }
+#qa-preview { margin-top: 24px; }
+#qa-summary { font-size: 13px; line-height: 1.7; color: var(--text-muted); }
+#qa-file-issues { margin: 10px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.7; color: var(--error-color); }

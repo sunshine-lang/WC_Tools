@@ -8,10 +8,11 @@ from flask import Flask, request, jsonify, render_template, send_file, redirect
 import logging
 from flask import cli
 
-from core_tools import RODataMatcher, TermScanner, TMMatcher, TagCleaner, TermFilter, KeyClassifier, ContextProcessor
+from core_tools import RODataMatcher, TermScanner, TMMatcher, TagCleaner, TermFilter, KeyClassifier, ContextProcessor, QAChecker
 from core_tools.context_processor import validate_material_name, CONTEXT_POLICY
 from core_tools.term_scanner import TERM_POLICY
 from core_tools.tm_matcher import TM_POLICY
+from core_tools.qa_checker import QA_POLICY
 
 tag_cleaner = TagCleaner()
 term_filter_tool = TermFilter()
@@ -350,13 +351,71 @@ def tm_result(task_id):
                     'matched_count': task['matched_count'], 'tm_db': task['tm_db']})
 
 
+# =============== 译后质量检查 ===============
+
+QA_DEFAULT_COLUMNS = {'source_column': 'game_text_en', 'target_column': 'game_text_de',
+                      'key_column': 'key', 'limit_column': 'limit'}
+
+
+@app.route('/qa')
+def page_qa():
+    return render_template('qa.html', active_page='qa', defaults=QA_DEFAULT_COLUMNS)
+
+
+@app.route('/upload/qa', methods=['POST'])
+def upload_qa():
+    uploads = {'translated': request.files.get('translated_file'), 'original': request.files.get('original_file')}
+    if not uploads['translated'] or not uploads['translated'].filename:
+        return jsonify({'error': '请选择翻译回填后的文件'}), 400
+    names = {}
+    for role, uploaded in uploads.items():
+        if uploaded and uploaded.filename:
+            names[role] = uploaded.filename.replace(chr(92), '/').rsplit('/', 1)[-1]
+            if os.path.splitext(names[role])[1].lower() not in ('.xlsx', '.csv'):
+                return jsonify({'error': '仅支持 .xlsx 或 UTF-8 .csv 文件'}), 400
+    columns = {name: (request.form.get(name) or '').strip() for name in QA_DEFAULT_COLUMNS}
+    if not columns['source_column'] or not columns['target_column']:
+        return jsonify({'error': '请填写源文列和译文列的表头名称'}), 400
+    if columns['source_column'].casefold() == columns['target_column'].casefold():
+        return jsonify({'error': '源文列和译文列不能相同'}), 400
+    try:
+        ratio = float(request.form.get('length_ratio') or 0)
+    except ValueError:
+        return jsonify({'error': '长度比例须为数字'}), 400
+    if ratio and not 1 <= ratio <= 5:
+        return jsonify({'error': '长度比例须在 1 到 5 之间，填 0 表示不检查'}), 400
+
+    task_id = str(uuid.uuid4())
+    paths = {}
+    for role, name in names.items():
+        paths[role] = os.path.join(app.config['UPLOAD_FOLDER'], f'{task_id}_qa_{role}{os.path.splitext(name)[1].lower()}')
+        uploads[role].save(paths[role])
+    output_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{task_id}_qa_report.xlsx')
+    checker = QAChecker(columns['source_column'], columns['target_column'],
+                        columns['key_column'], columns['limit_column'], length_ratio=ratio)
+    tasks[task_id] = {'progress': 0, 'status': '正在准备检查...', 'state': 'processing',
+                      'input_name': names['translated'], 'original_name': names.get('original', ''),
+                      'dl_name': os.path.splitext(names['translated'])[0] + '_QA报告.xlsx'}
+    threading.Thread(target=checker.process,
+                     args=(paths['translated'], output_path, tasks, task_id, paths.get('original'))).start()
+    return jsonify({'task_id': task_id})
+
+
+@app.route('/api/qa/<task_id>')
+def qa_result(task_id):
+    task = tasks.get(task_id, {})
+    if task.get('state') != 'completed' or task.get('qa_policy') != QA_POLICY:
+        return jsonify({'error': '检查结果不存在或尚未完成'}), 404
+    return jsonify({name: task[name] for name in ('records', 'file_issues', 'counts', 'check_counts', 'total', 'translated')})
+
+
 @app.route('/progress/<task_id>')
 def get_progress(task_id):
     task = tasks.get(task_id, {'error': '任务不存在或已过期'})
     if 'asset_paths' in task and task.get('context_policy') != CONTEXT_POLICY:
         return jsonify({'error': '旧版上下文结果已失效，请重新处理'}), 410
     return jsonify({key: value for key, value in task.items()
-                    if key not in ('records', 'asset_paths', 'bundle_file', 'result_file')})
+                    if key not in ('records', 'file_issues', 'asset_paths', 'bundle_file', 'result_file')})
 
 
 @app.route('/download/<task_id>')
