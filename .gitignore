@@ -1,0 +1,8 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+# 任务中间文件与客户知识库，不进版本库
+uploads/
+# 含 API Key
+config/config.json

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}内嵌标签与多余空格清洗{% endblock %}
+
+{% block content %}
+<div class="instructions">
+    <strong>功能说明：</strong>
+    <p>自动清理客户需求文档中（中文原文）内嵌标签周围及内部因输入不严谨产生的多余空格。避免后续 AI 翻译时将冗余空格误带入译文，保障标签格式的一致与整洁。</p>
+    <br>
+    <strong>使用规则：</strong>
+    <ul>
+        <li>请上传包含 <code>cn</code> 列（待清洗中文）的 CSV 文件。</li>
+        <li>工具将自动去除类似 <code>&lt;color=#f9c732&gt;</code> 等标签两头或内部的多余空格。</li>
+    </ul>
+</div>
+
+<div class="upload-grid">
+    <div class="upload-area" onclick="document.getElementById('file-input').click()">
+        <svg viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+        <p id="file-name">点击选择待处理的 CSV 文件</p>
+    </div>
+    <input type="file" id="file-input" accept=".csv" style="display:none;" onchange="updateFileInput('file-input', 'file-name', '点击选择待处理的 CSV 文件')">
+</div>
+
+<button class="upload-btn" id="start-btn" onclick="submitForm('/upload/tag_clean', [{id: 'file-input', param: 'file'}], 'start-btn')">开始清洗标签及空格</button>
+
+<div class="progress-container" id="progress-container">
+    <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
+    <div class="status-text" id="status-text">准备处理...</div>
+    <button class="upload-btn" id="download-btn">下载清洗后文件</button>
+</div>
+{% endblock %}
