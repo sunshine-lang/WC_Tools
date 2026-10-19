@@ -1,0 +1,30 @@
+.context-materials { display: grid; gap: 10px; margin: 12px 0 20px; }
+.context-material { padding: 12px 16px; background: #f8fafc; border: 1px solid var(--border-color); border-radius: 8px; font-size: 13px; }
+.context-material small { display: block; margin-top: 6px; color: var(--text-muted); }
+.context-files { display: grid; gap: 12px; margin: 18px 0; }
+.context-files label { display: grid; gap: 8px; font-size: 14px; }
+.context-files input { font: inherit; max-width: 100%; }
+.context-files select { font: inherit; padding: 8px; width: 100%; max-width: 100%; }
+.context-toggle { display: block; font-size: 14px; margin-top: 18px; }
+.context-filters { display: flex; flex-wrap: wrap; gap: 16px; margin: 16px 0; }
+.context-filters select { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 6px; font: inherit; }
+.context-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+.context-table th:first-child { width: 44px; }
+.context-table th:nth-child(2) { width: 175px; }
+.context-table th:nth-child(3) { width: 200px; }
+.context-table th:nth-child(4) { width: 58px; }
+.context-table td:first-child, .context-table td:nth-child(4) { white-space: nowrap; }
+.context-table th, .context-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-color); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.context-table th { background: #f8fafc; }
+.context-table td:nth-child(3) { min-width: 200px; white-space: pre-wrap; }
+.context-table td:last-child { min-width: 280px; }
+.context-table pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
+.context-table summary { color: var(--primary-color); cursor: pointer; }
+.context-images { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+.context-images a { display: block; max-width: 200px; color: var(--text-muted); }
+.context-images img { max-width: 180px; max-height: 150px; object-fit: contain; }
+.context-images small { display: block; margin-top: 4px; }
+.context-downloads { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+.context-downloads .upload-btn { margin-top: 0; width: auto; }
+#context-summary, #image-warnings { font-size: 13px; line-height: 1.7; color: var(--text-muted); }
+#context-preview { margin-top: 24px; }

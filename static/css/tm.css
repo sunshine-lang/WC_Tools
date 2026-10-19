@@ -1,0 +1,8 @@
+.tm-table { min-width: 800px; }
+.tm-table th { position: sticky; top: 0; z-index: 1; }
+.tm-table details { margin: 6px 0 12px; }
+.tm-table details p { font-size: 12px; line-height: 1.6; }
+#tm-preview { margin-top: 24px; }
+#tm-summary, #tm-db-feedback { font-size: 13px; line-height: 1.7; color: var(--text-muted); }
+#tm-db-status { margin-top: 14px; }
+#tm-db-feedback { min-height: 20px; }

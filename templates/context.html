@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}译文上下文关联{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/key_classifier.css?v=wc-rules-4">
+<link rel="stylesheet" href="/static/css/context.css?v=wc-compact-3">
+{% endblock %}
+{% block content %}
+<div class="instructions">
+    <strong>功能说明</strong>
+    <p>按活动、套组和对白 Key，关联当前上传文件中的英文原文，并新增 <code>Context</code> 列。</p>
+    <strong>使用规则</strong>
+    <ul>
+        <li>上传第一步下载的分类结果（.xlsx），原有内容与顺序保留。</li>
+        <li>缺少完整 Key 或无法可靠分段时，标记待确认，不按角色名或行号猜测。</li>
+        <li>Context 仅保留关联原文；状态、来源和检查提示在预览中查看。无法关联的单元格留空。</li>
+        <li>本步不需要 TMX。参考范围限定为 WC-UI 目录，禁止使用 done 结尾的材料和旧版工具缓存。</li>
+    </ul>
+</div>
+<details class="module-card knowledge-module rule-module" id="context-options">
+    <summary>查看关联规则与可选补充</summary>
+    <ul class="rule-help">
+        <li>活动 UI：优先关联同一用途的标题与说明；活动介绍配玩法引导，收藏页和成功／失败状态分别关联。</li>
+        <li>集卡：按套组编号关联同组卡册名和卡名。</li>
+        <li>装饰物与对白：依据完整 Key 关联，句序按数字排列；跨段线索只取当前文件内可验证的原文。</li>
+    </ul>
+    <label class="context-toggle"><input type="checkbox" id="enhance-input"> 使用 WC-UI 目录材料补充字段、人设与图片（可选）</label>
+    <div id="context-supplements" hidden>
+        <p class="rule-help">只从下列本目录现有文件中选择。文件缺少的 Key、气泡或图片会明确提示，不从其他目录补齐。</p>
+        <div class="context-files">
+            <label>本目录源材料<select id="reference-input" disabled>
+                {% for name in material_options %}<option value="{{ name }}" {% if name == context_materials[0].name %}selected{% endif %}>{{ name }}</option>{% endfor %}
+            </select></label>
+            <label>人设指导材料<select id="guide-input" disabled>
+                {% for name in material_options %}<option value="{{ name }}" {% if name == context_materials[1].name %}selected{% endif %}>{{ name }}</option>{% endfor %}
+            </select></label>
+        </div>
+        <p class="rule-help">本目录材料不作为待译答案。德语列和其他语种规则不会进入上下文。</p>
+    </div>
+</details>
+<div class="upload-grid">
+    <button type="button" class="upload-area" id="choose-file-btn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+        <span id="file-name">点击选择第一步下载的分类文件（.xlsx）</span>
+    </button>
+    <input type="file" id="file-input" accept=".xlsx" hidden>
+</div>
+<button type="button" class="upload-btn" id="start-btn">开始关联上下文</button>
+<div class="progress-container" id="progress-container">
+    <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
+    <div class="status-text" id="status-text" role="status" aria-live="polite">准备处理...</div>
+    <div id="context-preview" hidden>
+        <h3>结果预览</h3>
+        <p id="context-summary"></p>
+        <p id="image-warnings"></p>
+        <div class="context-filters">
+            <label>分类 <select id="category-filter"><option value="">全部分类</option></select></label>
+            <label>状态 <select id="status-filter"><option value="">全部状态</option><option>已关联</option><option>缺资料</option><option>待确认</option></select></label>
+        </div>
+        <div class="preview-table-wrap">
+            <table class="context-table">
+                <thead><tr><th>原行号</th><th>Key / 说话人</th><th>英文源文</th><th>状态</th><th>Context</th></tr></thead>
+                <tbody id="context-rows"></tbody>
+            </table>
+        </div>
+    </div>
+    <div class="context-downloads">
+        <button type="button" class="upload-btn" id="download-btn">下载 Excel 结果</button>
+        <button type="button" class="upload-btn" id="bundle-btn" hidden>下载结果与图片包</button>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="/static/js/context.js?v=wc-compact-3"></script>
+{% endblock %}
