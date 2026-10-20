@@ -9,3 +9,6 @@ config/config.json
 
 # 批次产物留在本地，不进版本库
 workspace/
+
+# 无头浏览器截图产生的临时目录
+.tmp-chrome/
