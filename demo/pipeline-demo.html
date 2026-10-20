@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WC 翻译准备工作台 · 交互演示</title>
+<title>WC 翻译准备工作台 · 交互演示 v2</title>
 <style>
 :root{
   --brand:#3b82f6; --brand-dark:#2563eb;
   --sidebar:#1e293b; --sidebar-2:#172033;
   --bg:#f1f5f9; --card:#fff; --line:#e2e8f0;
   --ink:#334155; --muted:#64748b; --head:#0f172a;
-  --ok:#10b981; --warn:#f59e0b; --bad:#ef4444;
+  --ok:#10b981; --warn:#f59e0b; --bad:#ef4444; --violet:#8b5cf6;
   --radius:12px;
 }
 *{box-sizing:border-box}
@@ -22,11 +22,8 @@ body{
 }
 code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 
-/* ---------------- sidebar ---------------- */
-.sidebar{
-  width:296px; flex:0 0 296px; background:var(--sidebar); color:#e2e8f0;
-  display:flex; flex-direction:column; overflow-y:auto;
-}
+/* sidebar */
+.sidebar{width:300px; flex:0 0 300px; background:var(--sidebar); color:#e2e8f0; display:flex; flex-direction:column; overflow-y:auto}
 .brand{padding:20px 22px 16px; border-bottom:1px solid rgba(255,255,255,.06)}
 .brand h1{margin:0; font-size:16px; letter-spacing:.04em; color:#fff}
 .brand p{margin:4px 0 0; font-size:12px; color:#94a3b8}
@@ -37,64 +34,62 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .pill{font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(59,130,246,.18); color:#93c5fd; border:1px solid rgba(59,130,246,.3)}
 .pill.gray{background:rgba(148,163,184,.14); color:#cbd5e1; border-color:rgba(148,163,184,.25)}
 
-.stages{list-style:none; margin:8px 0 24px; padding:0 12px}
-.stage-item{
-  display:grid; grid-template-columns:26px 1fr auto; align-items:center; gap:10px;
-  padding:10px 10px; border-radius:10px; cursor:pointer; transition:.15s;
-  border:1px solid transparent;
-}
+.stages{list-style:none; margin:8px 0 12px; padding:0 12px}
+.stage-item{display:grid; grid-template-columns:26px 1fr auto; align-items:center; gap:10px;
+  padding:10px; border-radius:10px; cursor:pointer; transition:.15s; border:1px solid transparent}
 .stage-item:hover{background:rgba(255,255,255,.05)}
 .stage-item.active{background:rgba(59,130,246,.16); border-color:rgba(59,130,246,.35)}
 .stage-item .num{font-size:11px; color:#64748b; text-align:center; font-variant-numeric:tabular-nums}
 .stage-item .title{font-size:13px; color:#e2e8f0}
 .stage-item .title small{display:block; font-size:11px; color:#7c8aa0; margin-top:1px}
-.stage-item .dot{width:9px; height:9px; border-radius:50%; background:#475569; box-shadow:0 0 0 3px rgba(255,255,255,.03)}
+.stage-item .dot{width:9px; height:9px; border-radius:50%; background:#475569}
 .stage-item[data-state="running"] .dot{background:var(--brand); animation:pulse 1.1s infinite}
+.stage-item[data-state="review"] .dot{background:var(--warn); animation:pulse 1.4s infinite}
 .stage-item[data-state="done"] .dot{background:var(--ok)}
 .stage-item[data-state="failed"] .dot{background:var(--bad)}
-.stage-item[data-state="pending"]{opacity:.55}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,.6)}50%{box-shadow:0 0 0 6px rgba(59,130,246,0)}}
+.stage-item[data-state="pending"]{opacity:.5}
+.stage-item .flag{font-size:10px; color:#64748b; border:1px solid rgba(255,255,255,.12); padding:0 5px; border-radius:4px}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,.55)}50%{box-shadow:0 0 0 6px rgba(59,130,246,0)}}
 
-/* ---------------- main ---------------- */
+.side-foot{margin-top:auto; padding:12px}
+.side-btn{width:100%; text-align:left; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08);
+  color:#e2e8f0; padding:11px 13px; border-radius:10px; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:9px}
+.side-btn:hover{background:rgba(255,255,255,.09)}
+.side-btn .cnt{margin-left:auto; font-size:11px; color:#93c5fd}
+
+/* main */
 .main{flex:1; display:flex; flex-direction:column; min-width:0}
-.topbar{
-  height:64px; flex:0 0 64px; background:var(--card); border-bottom:1px solid var(--line);
-  display:flex; align-items:center; gap:16px; padding:0 24px;
-}
-.topbar h2{margin:0; font-size:15px; color:var(--head)}
+.topbar{height:64px; flex:0 0 64px; background:var(--card); border-bottom:1px solid var(--line);
+  display:flex; align-items:center; gap:14px; padding:0 22px}
+.proj{display:flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid var(--line); border-radius:9px; cursor:pointer; background:#fff}
+.proj:hover{border-color:#cbd5e1}
+.proj .n{font-size:13px; color:var(--head); font-weight:600}
+.proj .l{font-size:11px; color:var(--muted)}
+.topbar h2{margin:0 0 0 6px; font-size:14px; color:var(--head); font-weight:600}
 .topbar .spacer{flex:1}
-.progress{width:220px; height:6px; border-radius:999px; background:#e2e8f0; overflow:hidden}
+.progress{width:180px; height:6px; border-radius:999px; background:#e2e8f0; overflow:hidden}
 .progress > i{display:block; height:100%; width:0; background:var(--brand); transition:width .3s}
-.counter{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; min-width:88px; text-align:right}
-
-.btn{
-  border:1px solid var(--line); background:#fff; color:var(--ink); padding:7px 14px;
-  border-radius:9px; font-size:13px; cursor:pointer; transition:.15s; white-space:nowrap;
-}
+.counter{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; min-width:60px; text-align:right}
+.btn{border:1px solid var(--line); background:#fff; color:var(--ink); padding:7px 14px; border-radius:9px;
+  font-size:13px; cursor:pointer; transition:.15s; white-space:nowrap}
 .btn:hover:not(:disabled){border-color:#cbd5e1; background:#f8fafc}
 .btn:disabled{opacity:.45; cursor:not-allowed}
 .btn.primary{background:var(--brand); border-color:var(--brand); color:#fff}
 .btn.primary:hover:not(:disabled){background:var(--brand-dark); border-color:var(--brand-dark)}
-.btn.ghost{border-color:transparent; color:var(--muted)}
+.btn.warn{background:#fff7ed; border-color:#fed7aa; color:#c2410c}
+.btn.bad{background:#fef2f2; border-color:#fecaca; color:#b91c1c}
 
 .content{flex:1; overflow-y:auto; padding:24px}
 .wrap{max-width:1080px; margin:0 auto}
 
 /* upload */
-.dropzone{
-  border:2px dashed #cbd5e1; border-radius:16px; background:#fff; padding:56px 24px; text-align:center;
-  transition:.18s; cursor:pointer;
-}
+.dropzone{border:2px dashed #cbd5e1; border-radius:16px; background:#fff; padding:52px 24px; text-align:center; transition:.18s; cursor:pointer}
 .dropzone:hover{border-color:var(--brand); background:#f8fbff}
-.dropzone .icon{font-size:34px; line-height:1}
+.dropzone .icon{font-size:34px}
 .dropzone h3{margin:14px 0 6px; font-size:16px; color:var(--head)}
 .dropzone p{margin:0; color:var(--muted); font-size:13px}
 .dropzone .hint{margin-top:18px; font-size:12px; color:#94a3b8}
-
-.filechip{
-  display:none; margin-top:20px; padding:14px 18px; background:#fff; border:1px solid var(--line);
-  border-radius:12px;
-}
+.filechip{display:none; margin-top:20px; padding:14px 18px; background:#fff; border:1px solid var(--line); border-radius:12px}
 .filechip.show{display:flex; align-items:center; gap:14px}
 .filechip .ico{width:38px;height:38px;border-radius:9px;background:#ecfdf5;color:#059669;display:grid;place-items:center;font-size:17px;flex:0 0 auto}
 .filechip .nm{font-size:13px; color:var(--head); word-break:break-all}
@@ -102,30 +97,25 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 
 /* panel */
 .panel{background:#fff; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
-.panel + .panel{margin-top:18px}
 .panel-head{display:flex; align-items:flex-start; gap:12px; padding:18px 22px; border-bottom:1px solid var(--line)}
-.panel-head .no{
-  width:34px;height:34px;border-radius:9px;background:#eff6ff;color:var(--brand-dark);
-  display:grid;place-items:center;font-size:13px;font-weight:600;flex:0 0 auto;font-variant-numeric:tabular-nums
-}
+.panel-head .no{width:34px;height:34px;border-radius:9px;background:#eff6ff;color:var(--brand-dark);
+  display:grid;place-items:center;font-size:13px;font-weight:600;flex:0 0 auto;font-variant-numeric:tabular-nums}
 .panel-head h3{margin:0; font-size:15px; color:var(--head)}
 .panel-head .artifact{margin-top:2px; font-size:12px; color:var(--muted)}
 .panel-head .right{margin-left:auto; text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:6px}
-
 .badge{font-size:11px; padding:3px 9px; border-radius:999px; border:1px solid}
 .badge.pending{background:#f8fafc; border-color:var(--line); color:var(--muted)}
 .badge.running{background:#eff6ff; border-color:#bfdbfe; color:var(--brand-dark)}
+.badge.review{background:#fffbeb; border-color:#fde68a; color:#b45309}
 .badge.done{background:#ecfdf5; border-color:#a7f3d0; color:#047857}
 .badge.failed{background:#fef2f2; border-color:#fecaca; color:#b91c1c}
 
 .desc{padding:14px 22px; color:var(--muted); font-size:13px; border-bottom:1px solid #f1f5f9}
-
 .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; padding:18px 22px}
 .stat{background:#f8fafc; border:1px solid #eef2f7; border-radius:10px; padding:12px 14px}
-.stat .k{font-size:11px; color:var(--muted); letter-spacing:.02em}
+.stat .k{font-size:11px; color:var(--muted)}
 .stat .v{font-size:21px; color:var(--head); font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px}
 .stat .v small{font-size:12px; font-weight:400; color:var(--muted); margin-left:3px}
-
 .preview{padding:0 22px 20px}
 .preview .cap{font-size:12px; color:var(--muted); margin-bottom:8px}
 .tbl{width:100%; border-collapse:collapse; font-size:12.5px}
@@ -133,66 +123,81 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .tbl td{padding:8px 10px; border-bottom:1px solid #f1f5f9; vertical-align:top}
 .tbl tr:last-child td{border-bottom:none}
 .tbl td.mono{font-family:ui-monospace,Menlo,Consolas,monospace; color:#0f172a; font-size:12px}
-.tbl td.muted{color:var(--muted)}
 .scroll{overflow-x:auto; border:1px solid var(--line); border-radius:10px}
-.scroll .tbl th:first-child, .scroll .tbl td:first-child{padding-left:14px}
-
-.cell{
-  background:#0f172a; color:#cbd5e1; border-radius:10px; padding:14px 16px; font-size:12px;
-  font-family:ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; line-height:1.7; overflow-x:auto;
-}
+.cell{background:#0f172a; color:#cbd5e1; border-radius:10px; padding:14px 16px; font-size:12px;
+  font-family:ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; line-height:1.7; overflow-x:auto}
 .cell .tag{color:#7dd3fc}
 .cell .lbl{color:#94a3b8}
-.cell .cur{color:#fbbf24}
-
 .bars{display:flex; flex-direction:column; gap:10px}
-.bar-row{display:grid; grid-template-columns:120px 1fr 52px; align-items:center; gap:12px; font-size:12.5px}
+.bar-row{display:grid; grid-template-columns:130px 1fr 52px; align-items:center; gap:12px; font-size:12.5px}
 .bar-row .track{height:9px; border-radius:999px; background:#eef2f7; overflow:hidden}
-.bar-row .fill{height:100%; border-radius:999px; background:var(--brand); width:0; transition:width .6s cubic-bezier(.2,.7,.3,1)}
+.bar-row .fill{height:100%; border-radius:999px; width:0; transition:width .6s cubic-bezier(.2,.7,.3,1)}
 .bar-row .n{text-align:right; color:var(--muted); font-variant-numeric:tabular-nums}
-
 .checks{display:flex; flex-direction:column; gap:9px}
 .check{display:flex; gap:10px; align-items:flex-start; padding:9px 12px; border:1px solid var(--line); border-radius:9px; background:#fff; font-size:12.5px}
 .check .m{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;color:#fff;flex:0 0 auto;margin-top:1px}
 .check.ok .m{background:var(--ok)}
 .check.warn .m{background:var(--warn)}
-.check.bad .m{background:var(--bad)}
 .check .t{flex:1}
 .check .t b{font-weight:600; color:var(--head)}
 .check .t span{color:var(--muted); margin-left:6px}
 .check .lv{font-size:11px; padding:1px 7px; border-radius:999px; border:1px solid var(--line); color:var(--muted)}
 
+/* 确认区 */
+.reviewbox{margin:0 22px 20px; border:1px solid #fde68a; background:#fffdf5; border-radius:12px; padding:16px 18px}
+.reviewbox h4{margin:0 0 10px; font-size:13px; color:#92400e}
+.reviewbox ul{margin:0; padding-left:18px; color:#78350f; font-size:12.5px; line-height:1.9}
+.reviewbox li::marker{color:#f59e0b}
+
 .panel-foot{padding:14px 22px; border-top:1px solid var(--line); background:#fbfcfe; display:flex; gap:10px; align-items:center}
 .panel-foot .note{font-size:12px; color:var(--muted); margin-left:auto}
+.spinner{width:14px;height:14px;border:2px solid #bfdbfe;border-top-color:var(--brand);border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
 
-.empty{
-  padding:60px 20px; text-align:center; color:var(--muted); font-size:13px;
-}
-.empty .big{font-size:26px; margin-bottom:10px; opacity:.5}
+/* 资料库 */
+.lib-head{display:flex; align-items:center; gap:12px; margin-bottom:18px}
+.lib-head h3{margin:0; font-size:16px; color:var(--head)}
+.lib-head p{margin:2px 0 0; font-size:12.5px; color:var(--muted)}
+.lib-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px}
+.lib-card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px 18px}
+.lib-card.wide{grid-column:1 / -1}
+.lib-card .top{display:flex; align-items:center; gap:10px}
+.lib-card .ic{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:15px;background:#eff6ff;color:var(--brand-dark);flex:0 0 auto}
+.lib-card .nm{font-size:13.5px; color:var(--head); font-weight:600}
+.lib-card .req{font-size:11px; padding:1px 6px; border-radius:4px; border:1px solid var(--line); color:var(--muted); margin-left:6px}
+.lib-card .req.must{background:#fef2f2; border-color:#fecaca; color:#b91c1c}
+.lib-card .ds{font-size:12px; color:var(--muted); margin:8px 0 10px}
+.lib-card .file{font-size:12px; font-family:ui-monospace,Menlo,Consolas,monospace; color:#0f172a; background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:7px 10px; word-break:break-all}
+.lib-card .file.empty{color:#94a3b8; font-style:italic}
+.lib-card .row{display:flex; align-items:center; gap:10px; margin-top:10px}
+.lib-card .st{font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid}
+.st.ok{background:#ecfdf5; border-color:#a7f3d0; color:#047857}
+.st.no{background:#f8fafc; border-color:var(--line); color:var(--muted)}
+
+/* modal */
+.mask{position:fixed; inset:0; background:rgba(15,23,42,.45); display:none; place-items:center; z-index:50}
+.mask.show{display:grid}
+.modal{width:460px; background:#fff; border-radius:14px; padding:24px; box-shadow:0 20px 60px rgba(15,23,42,.25)}
+.modal h3{margin:0 0 4px; font-size:16px; color:var(--head)}
+.modal p{margin:0 0 18px; font-size:12.5px; color:var(--muted)}
+.field{margin-bottom:14px}
+.field label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
+.field input,.field select{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:9px; font-size:13px; color:var(--ink); background:#fff}
+.field .two{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.modal-foot{display:flex; gap:10px; justify-content:flex-end; margin-top:20px}
 
 /* log */
-.logbar{
-  flex:0 0 auto; height:112px; background:var(--sidebar-2); color:#cbd5e1; font-size:12px;
-  font-family:ui-monospace,Menlo,Consolas,monospace; padding:10px 18px; overflow-y:auto;
-  border-top:1px solid rgba(255,255,255,.06);
-}
+.logbar{flex:0 0 auto; height:104px; background:var(--sidebar-2); color:#cbd5e1; font-size:12px;
+  font-family:ui-monospace,Menlo,Consolas,monospace; padding:10px 18px; overflow-y:auto; border-top:1px solid rgba(255,255,255,.06)}
 .logbar .ln{opacity:.55; white-space:nowrap}
 .logbar .ln:last-child{opacity:1; color:#e2e8f0}
 .logbar .t{color:#64748b; margin-right:10px}
 .logbar .ok{color:#6ee7b7}
 .logbar .run{color:#93c5fd}
 .logbar .bad{color:#fca5a5}
+.logbar .warn{color:#fcd34d}
 
-.demo-switch{
-  display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);
-  padding:6px 10px; border:1px solid var(--line); border-radius:9px; background:#fff; white-space:nowrap;
-}
-.demo-switch input{accent-color:var(--bad)}
-
-@media (max-width:960px){
-  .sidebar{display:none}
-  .stats{grid-template-columns:repeat(2,1fr)}
-}
+@media (max-width:1100px){ .lib-grid{grid-template-columns:1fr} .stats{grid-template-columns:repeat(2,1fr)} }
 </style>
 </head>
 <body>
@@ -200,441 +205,524 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 <aside class="sidebar">
   <div class="brand">
     <h1>WC 翻译准备工作台</h1>
-    <p>Translation Prep Pipeline · 交互演示</p>
+    <p>项目 · 资料库 · 逐节点确认</p>
   </div>
 
   <div class="batch">
-    <div class="name" id="batchName">未载入文件</div>
+    <div class="name" id="batchName">未载入批次</div>
     <div class="meta">
       <span class="pill" id="pillRows">— 行</span>
-      <span class="pill gray">en → de</span>
-      <span class="pill gray">WC 听风城堡</span>
+      <span class="pill gray" id="pillLang">en → de</span>
+      <span class="pill gray" id="pillProj">听风城堡</span>
     </div>
   </div>
 
   <ul class="stages" id="stageList"></ul>
+
+  <div class="side-foot">
+    <button class="side-btn" id="libBtn">
+      <span>📚</span><span>资料库</span><span class="cnt" id="libCnt">5 / 5</span>
+    </button>
+  </div>
 </aside>
 
 <div class="main">
   <div class="topbar">
-    <h2>批次工作台</h2>
+    <div class="proj" id="projBtn">
+      <div>
+        <div class="n" id="projName">听风城堡</div>
+        <div class="l" id="projLang">en → de</div>
+      </div>
+      <span style="color:#94a3b8;font-size:11px">▾</span>
+    </div>
+    <h2 id="topTitle">批次工作台</h2>
+    <div class="spacer"></div>
     <span class="counter" id="counter">0 / 7</span>
     <div class="progress"><i id="progressFill"></i></div>
     <span class="counter" id="elapsed">—</span>
-    <label class="demo-switch"><input type="checkbox" id="failSwitch"> 演示第 ④ 步失败</label>
+    <label class="btn" style="display:flex;align-items:center;gap:7px;cursor:pointer">
+      <input type="checkbox" id="failSwitch" style="accent-color:#ef4444"> 演示第 ④ 步失败
+    </label>
     <button class="btn" id="resetBtn" disabled>重置</button>
-    <button class="btn primary" id="runBtn" disabled>开始准备</button>
   </div>
 
   <div class="content">
-    <div class="wrap">
-      <!-- 上传态 -->
-      <div id="uploadView">
-        <div class="dropzone" id="dropzone">
-          <div class="icon">📄</div>
-          <h3>拖入待译文件，或点击选择</h3>
-          <p>支持 XLSX / CSV，需包含 key 与源文列</p>
-          <div class="hint">演示：点击这里会载入《WC（听风城堡）-UI部分翻译需求.xlsx》的示例数据</div>
-        </div>
-        <div class="filechip" id="filechip">
-          <div class="ico">✓</div>
-          <div>
-            <div class="nm" id="fileName"></div>
-            <div class="sub" id="fileMeta"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 阶段态 -->
-      <div id="panelView" style="display:none"></div>
-    </div>
+    <div class="wrap" id="view"></div>
   </div>
 
   <div class="logbar" id="log"></div>
 </div>
 
-<script>
-/* ------------------------------------------------------------------ 数据 */
-const BATCH = {
-  name: 'WC（听风城堡）-UI部分翻译需求.xlsx',
-  rows: 346,
-  game: 'WC 听风城堡',
-  lang: 'en → de'
-};
+<div class="mask" id="projMask">
+  <div class="modal">
+    <h3>新建项目</h3>
+    <p>一个项目对应一套资料库与一套规则；批次挂在项目下。</p>
+    <div class="field">
+      <label>项目名称</label>
+      <input id="npName" placeholder="例如：柠檬微趣 · 新作">
+    </div>
+    <div class="field">
+      <label>语言对</label>
+      <div class="two">
+        <select id="npSrc"><option>en</option><option>zh</option><option>ja</option><option>ko</option></select>
+        <select id="npTgt"><option>de</option><option>es</option><option>pt</option><option>fr</option><option>it</option><option>ja</option><option>ko</option></select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeProject()">取消</button>
+      <button class="btn primary" onclick="createProject()">创建项目</button>
+    </div>
+  </div>
+</div>
 
+<script>
+/* ------------------------------------------------------------------ 资料库 */
+const LIBRARY = [
+  { key:'tb',   name:'术语库',      req:true,  icon:'📗', desc:'源语言 ↔ 目标语言的词条对照，按词边界匹配。', file:'WC术语库.xlsx', meta:'161 条' },
+  { key:'tm',   name:'记忆库',      req:true,  icon:'🗂', desc:'历史源文与译文，TMX 格式，用于找相同或相近的句子。', file:'wcde.tmx', meta:'13,661 对' },
+  { key:'cast', name:'人设 / 关系', req:false, icon:'👥', desc:'角色简介与人物关系，对白翻译时判断语气与称呼。', file:'听风城堡-角色人际关系.md', meta:'22 角色 · 81 条关系' },
+  { key:'world',name:'游戏背景',    req:false, icon:'🌍', desc:'世界观、剧情梗概，供下游拼进提示词。', file:'', meta:'' },
+  { key:'style',name:'风格指南',    req:false, icon:'✒️', desc:'客户的语言规范与禁用写法。', file:'', meta:'' }
+];
+
+const BATCH = { name:'WC（听风城堡）-UI部分翻译需求.xlsx', rows:346 };
+
+/* ------------------------------------------------------------------ 节点 */
 const STAGES = [
-  {
-    no: '00', key: 'normalize', title: '规范化', sub: '先修表，再动内容',
-    artifact: '00-规范化.xlsx', duration: 0.2,
-    desc: '客户导出的工作表带 219 个只有格式、没有内容的空列；另外说话人写在 key 列里，分类器认不出对白。这一步补齐形状，不改任何业务判断。',
-    stats: [['输入行数','346',''],['删除空列','219',''],['补出 speaker','126',''],['输出列','6','']],
-    preview: {
-      type: 'table',
-      cap: '产物前 4 行（新增 speaker 列）',
-      head: ['limit','key','game_text_en','speaker'],
-      rows: [
-        ['30','cat_multiboards_complete_title','Feline Frenzy!',''],
-        ['24','Ahalloween_set1_name','Autumn Fun',''],
-        ['—','Chad',"Trust me, they're really hard!",'Chad'],
-        ['—','Christine','I hope you girls are excited! Gerald says this project is an animal jamboree escape room.','Christine']
-      ]
-    }
-  },
-  {
-    no: '01', key: 'classify', title: '分类', sub: '决定下游用哪套提示词',
-    artifact: '01-分类.xlsx', duration: 0.1,
-    desc: '按 game profile 里的类目规则给每一行打标签。分类同时决定两件事：下游选哪套提示词，以及长度校验对哪些行生效。',
-    stats: [['总行数','346',''],['活动对白','126',''],['集卡名称','150',''],['待确认','0','']],
-    preview: {
-      type: 'bars',
-      cap: '四类分布',
-      rows: [
-        ['集卡名称', 150, '#3b82f6'],
-        ['活动对白', 126, '#8b5cf6'],
-        ['活动 UI 与商店文案', 49, '#0ea5e9'],
-        ['装饰物名称', 21, '#10b981']
-      ]
-    }
-  },
-  {
-    no: '02', key: 'context', title: '上下文', sub: '把同族的兄弟条目找出来',
-    artifact: '02-上下文.xlsx', duration: 0.1,
-    desc: 'UI 文案按 key 词形归族，把同组的标题与描述拼成一张名片。对白不是同族关系，而是前后顺序，这一版尚未接上。',
-    stats: [['有 Context','216',' 行'],['无 Context','130',' 行'],['其中对白','126',' 行'],['最大簇','10',' 条']],
-    preview: {
-      type: 'code',
-      cap: 'cat_multiboards_complete_title 的 Context',
-      text: '[关联语境参考]\ncat_multiboards_complete_title: Feline Frenzy!\ncat_multiboards_complete_desc: The cats are having a fur-tastic time with Chad! Keep playing with them to earn more rewards.'
-    }
-  },
-  {
-    no: '03', key: 'term', title: '术语', sub: '词边界匹配，长词优先',
-    artifact: '03-术语.xlsx', duration: 0.1,
-    desc: '英语源用词边界匹配，大小写不敏感，长词优先并剔除已命中片段，避免「key」命中「keyboard」。候选全部保留，不做取舍。',
-    stats: [['命中行数','50',''],['命中术语','61',''],['未命中','296',''],['覆盖率','14.2','%']],
-    preview: {
-      type: 'table',
-      cap: '命中样例（关联术语列）',
-      head: ['源文片段','关联术语'],
-      rows: [
-        ['unlock keys and …','key (Schlüssel) | rewards (Belohnungen)'],
-        ['Complete the event …','rewards (Belohnungen) | event (Event)'],
-        ['Help Chad set up the escape room','escape room (Escape Room) | Chad (Chad)'],
-        ['collect clue tokens','clue tokens (Hinweis-Token)']
-      ]
-    }
-  },
-  {
-    no: '04', key: 'term_filter', title: '术语筛选', sub: '结合语境判真假',
-    artifact: '04-术语筛选.xlsx', duration: 75.4,
-    desc: '把候选词放回句子里，让模型判断它是否真的生效。提示词里「术语必须 100% 使用」是强制指令，未筛过的候选等于强制错误。',
-    stats: [['生效术语','57',''],['无效术语','6',''],['判掉比例','9.5','%'],['耗时','75.4','s']],
-    preview: {
-      type: 'table',
-      cap: '筛选结果（两列分开存放）',
-      head: ['源文片段','生效术语','无效术语'],
-      rows: [
-        ['unlock keys and …','key (Schlüssel) | rewards (Belohnungen)',''],
-        ['the key to success','','key (Schlüssel)'],
-        ['Christine is here','Christine (Christine)','']
-      ]
-    }
-  },
-  {
-    no: '05', key: 'tm', title: 'TM 参考', sub: '词法匹配，不做向量',
-    artifact: '05-TM.xlsx', duration: 1.3,
-    desc: '在德语记忆库里找相同或相近的句子。单元格只留状态、原文、译文；来源与差异仍保留在数据里供页面追溯。',
-    stats: [['有参考','12',' 行'],['原文一致','2',' 行'],['未命中','334',' 行'],['记忆库','13,661',' 对']],
-    preview: {
-      type: 'code',
-      cap: '一条「原文一致」的命中',
-      text: '[TM参考 1｜原文一致]\n【英】Complete the event to earn a total of <color=#ffde00>1550</color><sprite="icon_token_detect" name="icon_token_detect"> rewards!\n【德】Schließ das Event ab und hol dir <color=#ffde00>1550</color> <sprite="icon_token_detect" name="icon_token_detect"> als Belohnung!'
-    }
-  },
-  {
-    no: '06', key: 'qa', title: '准备自检', sub: '交付前的最后一道闸门',
-    artifact: '06-自检报告.md', duration: 0.1,
-    desc: '九条断言逐条校验，输出报告而不改数据。阻断项失败就不允许交付，告警项只记录。',
-    stats: [['断言','9',' 条'],['通过','8',''],['告警','1',''],['阻断','0','']],
-    preview: {
-      type: 'checks',
-      cap: '断言结果',
-      rows: [
-        ['ok','行数守恒','346 → 346','阻断'],
-        ['ok','列可逆','原始列全部保留，新增列在右侧','阻断'],
-        ['ok','目标列未写入','game_text_de 逐字节一致','阻断'],
-        ['ok','标签序列一致','<color> / <sprite> / {0} 全部对位','阻断'],
-        ['ok','无重复槽位','TM参考 单元格无重复块','阻断'],
-        ['ok','无悬空引用','12 条参考均可追溯','阻断'],
-        ['warn','长度告警','12 条接近 limit，需人工确认','告警'],
-        ['ok','覆盖率','346 / 346 有产出','告警'],
-        ['ok','精确命中可验证','2 条可在记忆库中按相等检索到','阻断']
-      ]
-    }
-  }
+  { no:'00', key:'normalize', title:'规范化', sub:'先修表，再动内容', confirm:false,
+    artifact:'00-规范化.xlsx', duration:0.2,
+    desc:'客户导出的工作表带 219 个只有格式、没有内容的空列；说话人写在 key 列里，分类器认不出对白。这一步补齐形状，不改业务判断。',
+    stats:[['输入行数','346',''],['删除空列','219',''],['补出 speaker','126',''],['输出列','6','']],
+    preview:{type:'table',cap:'产物前 4 行（新增 speaker 列）',head:['limit','key','game_text_en','speaker'],
+      rows:[['30','cat_multiboards_complete_title','Feline Frenzy!',''],
+            ['24','Ahalloween_set1_name','Autumn Fun',''],
+            ['—','Chad',"Trust me, they're really hard!",'Chad'],
+            ['—','Christine','I hope you girls are excited! Gerald says this project is an animal jamboree escape room.','Christine']]}},
+
+  { no:'01', key:'classify', title:'分类', sub:'决定下游用哪套提示词', confirm:false,
+    artifact:'01-分类.xlsx', duration:0.1,
+    desc:'按项目规则给每一行打文本类型。它同时决定两件事：下游选哪套提示词，以及长度校验对哪些行生效。',
+    stats:[['总行数','346',''],['活动对白','126',''],['集卡名称','150',''],['待确认','0','']],
+    preview:{type:'bars',cap:'四类分布',rows:[['集卡名称',150,'#3b82f6'],['活动对白',126,'#8b5cf6'],['活动 UI 与商店文案',49,'#0ea5e9'],['装饰物名称',21,'#10b981']]}},
+
+  { no:'02', key:'context', title:'上下文', sub:'把同族条目找出来', confirm:true,
+    artifact:'02-上下文.xlsx', duration:0.1,
+    desc:'UI 文案按 key 词形归族，把同组的标题与描述拼成一张名片。对白不是同族关系而是前后顺序，这一版尚未接上。',
+    stats:[['有 Context','216',' 行'],['无 Context','130',' 行'],['其中对白','126',' 行'],['最大簇','10',' 条']],
+    checks:['最大簇 10 条（Ahalloween 15 组），没有跨活动错误归组','126 条对白 Context 为空，符合本版预期','抽 3 行核对兄弟条目，确认同族判断正确'],
+    preview:{type:'code',cap:'cat_multiboards_complete_title 的 Context',
+      text:'[关联语境参考]\ncat_multiboards_complete_title: Feline Frenzy!\ncat_multiboards_complete_desc: The cats are having a fur-tastic time with Chad! Keep playing with them to earn more rewards.'}},
+
+  { no:'03', key:'term', title:'术语', sub:'词边界匹配，长词优先', confirm:false,
+    artifact:'03-术语.xlsx', duration:0.1,
+    desc:'英语源用词边界匹配，大小写不敏感，长词优先并剔除已命中片段，避免「key」命中「keyboard」。候选全部保留，不做取舍。',
+    stats:[['命中行数','50',''],['命中术语','61',''],['未命中','296',''],['覆盖率','14.2','%']],
+    preview:{type:'table',cap:'命中样例（关联术语列）',head:['源文片段','关联术语'],
+      rows:[['unlock keys and …','key (Schlüssel) | rewards (Belohnungen)'],
+            ['Complete the event …','rewards (Belohnungen) | event (Event)'],
+            ['Help Chad set up the escape room','escape room (Escape Room) | Chad (Chad)'],
+            ['collect clue tokens','clue tokens (Hinweis-Token)']]}},
+
+  { no:'04', key:'term_filter', title:'术语筛选', sub:'结合语境判真假', confirm:true,
+    artifact:'04-术语筛选.xlsx', duration:75.4,
+    desc:'把候选词放回句子里，让模型判断它是否真的生效。提示词里「术语必须 100% 使用」是强制指令，未筛过的候选等于强制错误。',
+    stats:[['生效术语','57',''],['无效术语','6',''],['判掉比例','9.5','%'],['耗时','75.4','s']],
+    checks:['判掉 6 个（9.5%），与历史经验值 14% 接近','抽 2 行看有没有把真术语判掉','若有整行候选全被判掉，需要回看原文'],
+    preview:{type:'table',cap:'筛选结果（两列分开存放）',head:['源文片段','生效术语','无效术语'],
+      rows:[['unlock keys and …','key (Schlüssel) | rewards (Belohnungen)',''],
+            ['the key to success','','key (Schlüssel)'],
+            ['Christine is here','Christine (Christine)','']]}},
+
+  { no:'05', key:'tm', title:'TM 参考', sub:'词法匹配，不做向量', confirm:true,
+    artifact:'05-TM.xlsx', duration:1.3,
+    desc:'在记忆库里找相同或相近的句子。单元格只留状态、原文、译文；来源与差异保留在数据里供页面追溯。',
+    stats:[['有参考','12',' 行'],['原文一致','2',' 行'],['未命中','334',' 行'],['记忆库','13,661',' 对']],
+    checks:['2 条「原文一致」可以直接沿用，无需改写','其余 334 行按无依据处理，下游不要硬套','确认没有把弱相关当成可照抄'],
+    preview:{type:'code',cap:'一条「原文一致」的命中',
+      text:'[TM参考 1｜原文一致]\n【英】Complete the event to earn a total of <color=#ffde00>1550</color><sprite="icon_token_detect" name="icon_token_detect"> rewards!\n【德】Schließ das Event ab und hol dir <color=#ffde00>1550</color> <sprite="icon_token_detect" name="icon_token_detect"> als Belohnung!'}},
+
+  { no:'06', key:'qa', title:'准备自检', sub:'交付前的最后一道闸门', confirm:true,
+    artifact:'06-自检报告.md', duration:0.1,
+    desc:'九条断言逐条校验，输出报告而不改数据。阻断项失败就不允许交付，告警项只记录。',
+    stats:[['断言','9',' 条'],['通过','8',''],['告警','1',''],['阻断','0','']],
+    checks:['阻断项 0，可以交付','长度告警 12 条，需人工确认是否改写','覆盖率 346 / 346'],
+    preview:{type:'checks',cap:'断言结果',rows:[
+      ['ok','行数守恒','346 → 346','阻断'],
+      ['ok','列可逆','原始列全部保留，新增列在右侧','阻断'],
+      ['ok','目标列未写入','game_text_de 逐字节一致','阻断'],
+      ['ok','标签序列一致','<color> / <sprite> / {0} 全部对位','阻断'],
+      ['ok','无重复槽位','TM参考 单元格无重复块','阻断'],
+      ['ok','无悬空引用','12 条参考均可追溯','阻断'],
+      ['warn','长度告警','12 条接近 limit，需人工确认','告警'],
+      ['ok','覆盖率','346 / 346 有产出','告警'],
+      ['ok','精确命中可验证','2 条可在记忆库中按相等检索到','阻断']]}}
 ];
 
 /* ------------------------------------------------------------------ 状态 */
 const state = {
-  loaded: false,
-  running: false,
-  current: -1,
+  view:'batch',
+  project:{ name:'听风城堡', src:'en', tgt:'de' },
+  library: LIBRARY.map(x => ({...x})),
+  loaded:false, running:false,
+  activeIndex:-1,
   stages: STAGES.map(() => 'pending'),
-  startedAt: null,
-  activeIndex: -1
+  startedAt:null,
+  retryThenContinue:false
 };
 
-/* ------------------------------------------------------------------ 元素 */
 const $ = id => document.getElementById(id);
-const stageList = $('stageList');
-const panelView = $('panelView');
-const uploadView = $('uploadView');
+const view = $('view');
 const logEl = $('log');
-const runBtn = $('runBtn');
-const resetBtn = $('resetBtn');
 
-/* ------------------------------------------------------------------ 渲染：侧栏 */
-function renderStages() {
-  stageList.innerHTML = STAGES.map((s, i) => `
-    <li class="stage-item ${i === state.activeIndex ? 'active' : ''}" data-state="${state.stages[i]}" data-i="${i}">
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function log(text, kind){
+  const d = new Date();
+  const t = [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+  const el = document.createElement('div');
+  el.className='ln';
+  el.innerHTML = `<span class="t">${t}</span><span class="${kind||''}">${esc(text)}</span>`;
+  logEl.appendChild(el); logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ------------------------------------------------------------------ 侧栏 */
+function renderSidebar(){
+  $('stageList').innerHTML = STAGES.map((s,i)=>`
+    <li class="stage-item ${i===state.activeIndex?'active':''}" data-state="${state.stages[i]}" data-i="${i}">
       <span class="num">${s.no}</span>
       <span class="title">${s.title}<small>${s.sub}</small></span>
-      <span class="dot"></span>
+      <span class="flag">${s.confirm?'需确认':'自动'}</span>
     </li>`).join('');
-  stageList.querySelectorAll('.stage-item').forEach(el => {
-    el.onclick = () => {
+  $('stageList').querySelectorAll('.stage-item').forEach(el=>{
+    el.onclick = ()=>{
       const i = Number(el.dataset.i);
-      if (state.stages[i] === 'pending') return;
-      state.activeIndex = i;
-      renderStages();
-      renderPanel(i);
+      if (state.stages[i]==='pending') return;
+      state.activeIndex = i; state.view='batch';
+      renderSidebar(); render();
     };
   });
+  $('libCnt').textContent = `${state.library.filter(x=>x.file).length} / ${state.library.length}`;
+  $('pillProj').textContent = state.project.name;
+  $('pillLang').textContent = `${state.project.src} → ${state.project.tgt}`;
+  $('projName').textContent = state.project.name;
+  $('projLang').textContent = `${state.project.src} → ${state.project.tgt}`;
 }
 
-/* ------------------------------------------------------------------ 渲染：进度 */
-function renderProgress() {
-  const done = state.stages.filter(s => s === 'done').length;
+function renderProgress(){
+  const done = state.stages.filter(s=>s==='done').length;
   $('counter').textContent = `${done} / ${STAGES.length}`;
-  $('progressFill').style.width = `${(done / STAGES.length) * 100}%`;
+  $('progressFill').style.width = `${(done/STAGES.length)*100}%`;
 }
 
-function tickElapsed() {
-  if (!state.startedAt) return;
-  const s = (Date.now() - state.startedAt) / 1000;
-  $('elapsed').textContent = `用时 ${s.toFixed(1)}s`;
+function tickElapsed(){
+  if(!state.startedAt) return;
+  $('elapsed').textContent = `用时 ${((Date.now()-state.startedAt)/1000).toFixed(1)}s`;
 }
 
-/* ------------------------------------------------------------------ 渲染：面板 */
-function renderPanel(i) {
-  const s = STAGES[i];
-  const st = state.stages[i];
-  const badge = { pending: '待处理', running: '进行中', done: '完成', failed: '失败' }[st];
+/* ------------------------------------------------------------------ 视图 */
+function render(){
+  const t = document.getElementById('topTitle');
+  if(t) t.textContent = state.view==='library' ? '资料库' : '批次工作台';
+  if(state.view==='library') return renderLibrary();
+  view.innerHTML = state.loaded ? panelHTML(state.activeIndex) : uploadHTML();
+  if(state.loaded) animateBars();
+  bindView();
+}
 
-  panelView.innerHTML = `
+function uploadHTML(){
+  return `
+    <div class="dropzone" id="dropzone">
+      <div class="icon">📄</div>
+      <h3>拖入待译文件，或点击选择</h3>
+      <p>支持 XLSX / CSV，需包含 key 与源文列</p>
+      <div class="hint">演示：点击会载入《WC（听风城堡）-UI部分翻译需求.xlsx》的示例数据</div>
+    </div>`;
+}
+
+function panelHTML(i){
+  if(i<0){
+    return `<div class="filechip show">
+        <div class="ico">✓</div>
+        <div><div class="nm">${esc(BATCH.name)}</div>
+        <div class="sub">${BATCH.rows} 行 · ${esc(state.project.name)} · ${state.project.src} → ${state.project.tgt}</div></div>
+      </div>
+      <div class="panel" style="margin-top:18px"><div class="desc">批次已载入。逐节点执行，每个需要判断的节点会停下来等你确认。</div></div>`;
+  }
+  const s = STAGES[i], st = state.stages[i];
+  const badgeText = {pending:'待处理',running:'执行中',review:'待确认',done:'已确认',failed:'失败'}[st];
+  return `
     <div class="panel">
       <div class="panel-head">
         <div class="no">${s.no}</div>
-        <div>
-          <h3>${s.title}</h3>
-          <div class="artifact">产物 · ${s.artifact}</div>
-        </div>
+        <div><h3>${s.title}</h3><div class="artifact">产物 · ${s.artifact}</div></div>
         <div class="right">
-          <span class="badge ${st}">${badge}</span>
-          <span class="artifact mono">${st === 'done' ? s.duration.toFixed(1) + 's' : '—'}</span>
+          <span class="badge ${st}">${badgeText}</span>
+          <span class="artifact mono">${(st==='done'||st==='review')?s.duration.toFixed(1)+'s':'—'}</span>
         </div>
       </div>
-      <div class="desc">${escapeHtml(s.desc)}</div>
-      <div class="stats">
-        ${s.stats.map(([k, v, u]) => `
-          <div class="stat"><div class="k">${k}</div><div class="v">${v}<small>${u || ''}</small></div></div>
-        `).join('')}
-      </div>
-      <div class="preview">${renderPreview(s.preview)}</div>
-      <div class="panel-foot">
-        <button class="btn" ${st === 'done' ? '' : 'disabled'} onclick="rerunFrom(${i})">从这一步重跑</button>
-        <span class="note">${st === 'done' ? '重跑会保留前序产物，只覆盖本步及之后' : '该阶段尚未完成'}</span>
-      </div>
+      <div class="desc">${esc(s.desc)}</div>
+      <div class="stats">${s.stats.map(([k,v,u])=>`
+        <div class="stat"><div class="k">${k}</div><div class="v">${v}<small>${u||''}</small></div></div>`).join('')}</div>
+      <div class="preview">${previewHTML(s.preview)}</div>
+      ${(st==='review' && s.checks) ? reviewBox(s.checks) : ''}
+      <div class="panel-foot">${footHTML(i, st)}</div>
     </div>`;
-  panelView.style.display = 'block';
 }
 
-function renderPreview(p) {
-  if (p.type === 'table') {
-    return `<div class="cap">${p.cap}</div>
-      <div class="scroll"><table class="tbl">
-        <thead><tr>${p.head.map(h => `<th>${h}</th>`).join('')}</tr></thead>
-        <tbody>${p.rows.map(r => `<tr>${r.map((c, j) =>
-          `<td class="${j === 0 ? 'mono' : ''}">${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody>
-      </table></div>`;
+function reviewBox(checks){
+  return `<div class="reviewbox"><h4>⚠ 确认前看一眼</h4>
+    <ul>${checks.map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`;
+}
+
+function footHTML(i, st){
+  const s = STAGES[i];
+  const last = i === STAGES.length-1;
+  if(st==='pending') return `<button class="btn" disabled>等待前置节点</button><span class="note">按顺序执行</span>`;
+  if(st==='running') return `<button class="btn" disabled><span class="spinner"></span>执行中…</button><span class="note">可以离开页面，状态会保留</span>`;
+  if(st==='failed')  return `<button class="btn bad" onclick="retry(${i},false)">重试本步</button>
+                              <button class="btn" onclick="retry(${i},true)">重试并继续</button>
+                              <span class="note">前序产物已保留</span>`;
+  if(st==='review')  return `<button class="btn primary" onclick="confirmNext(${i})">确认并继续 →</button>
+                              <button class="btn" onclick="rerun(${i})">重跑本步</button>
+                              <span class="note">这一步需要你判断</span>`;
+  if(last)           return `<button class="btn primary" disabled>全部完成</button>
+                              <span class="note">产物在 workspace/${esc(BATCH.name.replace(/\.xlsx$/,''))}/</span>`;
+  return `<button class="btn" onclick="rerun(${i})">重跑本步</button>
+          <span class="note">下一节点：${STAGES[i+1].title}</span>`;
+}
+
+function previewHTML(p){
+  if(p.type==='table'){
+    return `<div class="cap">${esc(p.cap)}</div><div class="scroll"><table class="tbl">
+      <thead><tr>${p.head.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${p.rows.map(r=>`<tr>${r.map((c,j)=>`<td class="${j===0?'mono':''}">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>`;
   }
-  if (p.type === 'bars') {
-    const max = Math.max(...p.rows.map(r => r[1]));
-    return `<div class="cap">${p.cap}</div><div class="bars">
-      ${p.rows.map(([label, n, color]) => `
-        <div class="bar-row">
-          <span>${label}</span>
-          <span class="track"><i class="fill" style="background:${color}" data-w="${(n / max) * 100}"></i></span>
-          <span class="n">${n}</span>
-        </div>`).join('')}
-    </div>`;
+  if(p.type==='bars'){
+    const max = Math.max(...p.rows.map(r=>r[1]));
+    return `<div class="cap">${esc(p.cap)}</div><div class="bars">${p.rows.map(([l,n,c])=>`
+      <div class="bar-row"><span>${esc(l)}</span>
+        <span class="track"><i class="fill" style="background:${c}" data-w="${(n/max)*100}"></i></span>
+        <span class="n">${n}</span></div>`).join('')}</div>`;
   }
-  if (p.type === 'code') {
-    return `<div class="cap">${p.cap}</div><div class="cell">${highlight(p.text)}</div>`;
-  }
-  if (p.type === 'checks') {
-    return `<div class="cap">${p.cap}</div><div class="checks">
-      ${p.rows.map(([lv, name, detail, level]) => `
-        <div class="check ${lv}">
-          <span class="m">${lv === 'ok' ? '✓' : lv === 'warn' ? '!' : '×'}</span>
-          <span class="t"><b>${escapeHtml(name)}</b><span>${escapeHtml(detail)}</span></span>
-          <span class="lv">${level}</span>
-        </div>`).join('')}
-    </div>`;
-  }
+  if(p.type==='code') return `<div class="cap">${esc(p.cap)}</div><div class="cell">${highlight(p.text)}</div>`;
+  if(p.type==='checks') return `<div class="cap">${esc(p.cap)}</div><div class="checks">${p.rows.map(([lv,n,d,level])=>`
+    <div class="check ${lv}"><span class="m">${lv==='ok'?'✓':'!'}</span>
+    <span class="t"><b>${esc(n)}</b><span>${esc(d)}</span></span>
+    <span class="lv">${level}</span></div>`).join('')}</div>`;
   return '';
 }
 
-function highlight(text) {
-  return escapeHtml(text)
-    .replace(/\[TM参考 (\d)｜(.*?)\]/g, '<span class="tag">[TM参考 $1｜$2]</span>')
-    .replace(/【(英|德)】/g, '<span class="lbl">【$1】</span>');
+function highlight(text){
+  return esc(text)
+    .replace(/\[TM参考 (\d)｜(.*?)\]/g,'<span class="tag">[TM参考 $1｜$2]</span>')
+    .replace(/【(英|德)】/g,'<span class="lbl">【$1】</span>');
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function animateBars(){
+  requestAnimationFrame(()=>{ view.querySelectorAll('.fill').forEach(el=>{ el.style.width = el.dataset.w + '%'; }); });
 }
 
-/* 让条形图有入场动画 */
-function animateBars() {
-  requestAnimationFrame(() => {
-    panelView.querySelectorAll('.fill').forEach(el => {
-      el.style.width = el.dataset.w + '%';
-    });
+/* ------------------------------------------------------------------ 资料库视图 */
+function renderLibrary(){
+  view.innerHTML = `
+    <div class="lib-head">
+      <div>
+        <h3>资料库 · ${esc(state.project.name)}</h3>
+        <p>每个项目一套。上传新的会直接替换旧的，不留历史版本。</p>
+      </div>
+      <div style="margin-left:auto;color:var(--muted);font-size:12.5px">
+        已就绪 ${state.library.filter(x=>x.file).length} / ${state.library.length}
+      </div>
+    </div>
+    <div class="lib-grid">
+      ${state.library.map((x,idx)=>`
+        <div class="lib-card">
+          <div class="top">
+            <span class="ic">${x.icon}</span>
+            <span class="nm">${x.name}</span>
+            <span class="req ${x.req?'must':''}">${x.req?'必需':'选填'}</span>
+          </div>
+          <div class="ds">${esc(x.desc)}</div>
+          <div class="file ${x.file?'':'empty'}">${x.file?esc(x.file):'尚未上传'}</div>
+          <div class="row">
+            <span class="st ${x.file?'ok':'no'}">${x.file?'已就绪':'缺失'}</span>
+            ${x.meta?`<span style="font-size:11px;color:var(--muted)">${esc(x.meta)}</span>`:''}
+            <button class="btn" style="margin-left:auto" onclick="uploadLib(${idx})">${x.file?'替换':'上传'}</button>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+const LIB_DEMO = { world:'游戏介绍.md', style:'WC翻译客户要求.md' };
+
+function uploadLib(i){
+  const item = state.library[i];
+  const demo = LIB_DEMO[item.key]
+    || (item.key==='cast' ? '听风城堡-角色人际关系.md' : item.file || '新资料.xlsx');
+  const replacing = !!item.file;
+  item.file = demo;
+  if(item.key==='world' || item.key==='style') item.meta = '已载入';
+  renderSidebar(); renderLibrary();
+  log(`资料库 · ${item.name} ${replacing?'已替换为':'已上传'} ${demo}`, 'ok');
+}
+
+/* ------------------------------------------------------------------ 执行 */
+async function runStage(i){
+  state.activeIndex = i;
+  state.stages[i] = 'running';
+  state.view='batch';
+  state.startedAt = state.startedAt || Date.now();
+  renderSidebar(); renderProgress(); render();
+  log(`开始 ${STAGES[i].no} ${STAGES[i].title}…`, 'run');
+
+  await sleep(320 + STAGES[i].duration * 6);
+
+  if(i===4 && $('failSwitch').checked){
+    state.stages[i] = 'failed';
+    renderSidebar(); renderProgress(); render();
+    log(`${STAGES[i].no} ${STAGES[i].title} 失败：接口返回 429，前序产物已保留`, 'bad');
+    state.running=false; updateTop();
+    return;
+  }
+
+  state.stages[i] = STAGES[i].confirm ? 'review' : 'done';
+  renderSidebar(); renderProgress(); render();
+  log(`${STAGES[i].no} ${STAGES[i].title} 完成 · ${STAGES[i].duration.toFixed(1)}s · ${STAGES[i].confirm?'等待确认':'自动通过'}`, 'ok');
+
+  if(!STAGES[i].confirm){
+    await sleep(700);
+    advance(i);
+  } else {
+    state.running=false; updateTop();
+  }
+}
+
+async function advance(i){
+  if(i+1 < STAGES.length){
+    state.running = true; updateTop();
+    await runStage(i+1);
+  } else {
+    state.running=false; updateTop();
+    log('全部节点完成，产物在 workspace/'+BATCH.name.replace(/\.xlsx$/,'')+'/', 'ok');
+  }
+}
+
+function confirmNext(i){
+  if(state.stages[i]!=='review') return;
+  state.stages[i]='done';
+  log(`${STAGES[i].no} ${STAGES[i].title} 已确认`, 'ok');
+  renderSidebar(); renderProgress();
+  state.running = true; updateTop();
+  advance(i);
+}
+
+function rerun(i){
+  state.stages[i]='running';
+  log(`重跑 ${STAGES[i].no} ${STAGES[i].title}`, 'warn');
+  runStage(i);
+}
+
+function retry(i, thenContinue){
+  state.retryThenContinue = thenContinue;
+  log(`重试 ${STAGES[i].no} ${STAGES[i].title}${thenContinue?'（并继续）':''}`, 'warn');
+  runStage(i).then(()=>{
+    if(state.retryThenContinue && state.stages[i]==='review') confirmNext(i);
+    state.retryThenContinue = false;
   });
 }
 
-/* ------------------------------------------------------------------ 日志 */
-function log(text, kind) {
-  const now = new Date();
-  const t = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-  const div = document.createElement('div');
-  div.className = 'ln';
-  div.innerHTML = `<span class="t">${t}</span><span class="${kind || ''}">${text}</span>`;
-  logEl.appendChild(div);
-  logEl.scrollTop = logEl.scrollHeight;
+function updateTop(){ $('resetBtn').disabled = state.running; }
+
+/* ------------------------------------------------------------------ 项目 */
+function openProject(){ $('projMask').classList.add('show'); }
+function closeProject(){ $('projMask').classList.remove('show'); }
+function createProject(){
+  const name = $('npName').value.trim() || '未命名项目';
+  state.project = { name, src:$('npSrc').value, tgt:$('npTgt').value };
+  state.library = LIBRARY.map(x=>({...x, file:'', meta:''}));
+  state.loaded = false;
+  state.stages = STAGES.map(()=> 'pending');
+  state.activeIndex = -1;
+  state.view = 'library';
+  closeProject();
+  renderSidebar(); renderProgress(); render();
+  log(`新建项目「${name}」（${state.project.src} → ${state.project.tgt}），资料库为空`, 'ok');
 }
 
-/* ------------------------------------------------------------------ 载入 */
-$('dropzone').onclick = () => {
-  if (state.loaded) return;
+/* ------------------------------------------------------------------ 绑定 */
+function bindView(){
+  const dz = $('dropzone');
+  if(dz) dz.onclick = loadBatch;
+}
+
+function loadBatch(){
   state.loaded = true;
-  $('dropzone').style.display = 'none';
-  $('filechip').classList.add('show');
-  $('fileName').textContent = BATCH.name;
-  $('fileMeta').textContent = `${BATCH.rows} 行 · ${BATCH.game} · ${BATCH.lang}`;
+  state.activeIndex = -1;
   $('batchName').textContent = BATCH.name;
   $('pillRows').textContent = BATCH.rows + ' 行';
-  runBtn.disabled = false;
-  renderStages();
-  log('已载入 ' + BATCH.name + '，' + BATCH.rows + ' 行', 'ok');
-};
-
-/* ------------------------------------------------------------------ 执行 */
-async function runAll() {
-  if (state.running) return;
-  state.running = true;
-  runBtn.disabled = true;
-  resetBtn.disabled = true;
-  state.startedAt = Date.now();
-  const timer = setInterval(tickElapsed, 100);
-
-  for (let i = 0; i < STAGES.length; i++) {
-    state.current = i;
-    state.stages[i] = 'running';
-    state.activeIndex = i;
-    renderStages(); renderProgress(); renderPanel(i);
-    log(`开始 ${STAGES[i].no} ${STAGES[i].title}…`, 'run');
-
-    await sleep(300 + STAGES[i].duration * 8);
-
-    // 演示失败：第 ④ 步
-    if (i === 4 && $('failSwitch').checked) {
-      state.stages[i] = 'failed';
-      renderStages(); renderProgress(); renderPanel(i);
-      log(`${STAGES[i].no} ${STAGES[i].title} 失败：接口返回 429，已保留前序产物`, 'bad');
-      state.running = false;
-      clearInterval(timer);
-      runBtn.disabled = false; resetBtn.disabled = false;
-      return;
-    }
-
-    state.stages[i] = 'done';
-    renderStages(); renderProgress(); renderPanel(i);
-    animateBars();
-    log(`${STAGES[i].no} ${STAGES[i].title} 完成 · ${STAGES[i].duration.toFixed(1)}s · 产物 ${STAGES[i].artifact}`, 'ok');
-  }
-
-  state.activeIndex = STAGES.length - 1;
-  renderStages(); renderPanel(STAGES.length - 1); animateBars();
-  clearInterval(timer);
-  state.running = false;
-  runBtn.disabled = false; resetBtn.disabled = false;
-  log('全部完成，产物在 workspace/' + BATCH.name.replace(/\.xlsx$/, '') + '/', 'ok');
+  renderSidebar(); render();
+  log('已载入 '+BATCH.name+'，'+BATCH.rows+' 行', 'ok');
+  log('资料库就绪，点右上角「开始准备」逐节点执行', '');
 }
 
-function rerunFrom(i) {
-  for (let k = i; k < STAGES.length; k++) state.stages[k] = 'pending';
-  state.startedAt = Date.now();
-  log(`从 ${STAGES[i].no} ${STAGES[i].title} 重跑`, 'run');
-  state.running = false;
-  runAll();
-}
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-runBtn.onclick = runAll;
-
-resetBtn.onclick = () => {
-  state.stages = STAGES.map(() => 'pending');
-  state.activeIndex = -1;
-  state.startedAt = null;
-  renderStages(); renderProgress();
-  panelView.style.display = 'none';
-  uploadView.style.display = 'block';
-  $('elapsed').textContent = '—';
-  logEl.innerHTML = '';
-  log('已重置', '');
+$('libBtn').onclick = ()=>{ state.view='library'; renderSidebar(); render(); };
+$('projBtn').onclick = openProject;
+$('resetBtn').onclick = ()=>{
+  state.loaded=false; state.stages=STAGES.map(()=> 'pending');
+  state.activeIndex=-1; state.startedAt=null; state.running=false;
+  state.view='batch';
+  $('elapsed').textContent='—'; logEl.innerHTML='';
+  renderSidebar(); renderProgress(); render();
+  log('已重置','');
 };
 
-/* ------------------------------------------------------------------ 初始化 */
-renderStages();
-renderProgress();
+setInterval(tickElapsed, 200);
+
+/* ------------------------------------------------------------------ 启动 */
+renderSidebar(); renderProgress(); render();
 log('工作台就绪，等待载入待译文件', '');
 
-/* 演示用：URL 带 ?auto 时直接铺满结果，?auto=3 可指定停在第 4 个阶段 */
-const autoParam = new URLSearchParams(location.search).get('auto');
-if (autoParam !== null) {
+const params = new URLSearchParams(location.search);
+
+/* ?review=N：前 N 个节点已完成，第 N 个停在待确认 */
+const reviewAt = params.get('review');
+if(reviewAt !== null){
+  const n = Math.max(0, Math.min(STAGES.length-1, Number(reviewAt)||0));
   state.loaded = true;
-  state.stages = STAGES.map(() => 'done');
-  $('dropzone').style.display = 'none';
-  $('filechip').classList.add('show');
-  $('fileName').textContent = BATCH.name;
-  $('fileMeta').textContent = `${BATCH.rows} 行 · ${BATCH.game} · ${BATCH.lang}`;
+  state.stages = STAGES.map((_,i)=> i<n ? 'done' : (i===n ? 'review' : 'pending'));
+  state.activeIndex = n;
+  state.startedAt = Date.now() - 42000;
+  $('progressFill').style.transition='none';
   $('batchName').textContent = BATCH.name;
   $('pillRows').textContent = BATCH.rows + ' 行';
-  runBtn.disabled = false;
-  resetBtn.disabled = false;
+  $('elapsed').textContent = '用时 42.3s';
+  renderSidebar(); renderProgress(); render();
+  view.querySelectorAll('.fill').forEach(el=>{ el.style.transition='none'; el.style.width = el.dataset.w+'%'; });
+  log('演示模式：停在「待确认」', 'ok');
+}
+
+/* ?lib：直接打开资料库 */
+if(params.get('lib') !== null){
+  state.view='library';
+  renderSidebar(); render();
+}
+
+const auto = params.get('auto');
+if(auto!==null){
+  state.loaded = true;
+  state.stages = STAGES.map(()=> 'done');
+  state.startedAt = Date.now() - 78500;
+  $('progressFill').style.transition='none';
+  $('batchName').textContent = BATCH.name;
+  $('pillRows').textContent = BATCH.rows + ' 行';
   $('elapsed').textContent = '用时 78.5s';
-  $('progressFill').style.transition = 'none';
-  const idx = autoParam === '' ? STAGES.length - 1
-    : Math.max(0, Math.min(STAGES.length - 1, Number(autoParam) || 0));
+  const idx = auto==='' ? STAGES.length-1 : Math.max(0, Math.min(STAGES.length-1, Number(auto)||0));
   state.activeIndex = idx;
-  renderStages();
-  renderProgress();
-  renderPanel(idx);
-  animateBars();
-  log('演示模式：已铺满全部阶段结果', 'ok');
+  renderSidebar(); renderProgress(); render();
+  view.querySelectorAll('.fill').forEach(el=>{ el.style.transition='none'; el.style.width = el.dataset.w+'%'; });
+  log('演示模式：已铺满结果', 'ok');
 }
 </script>
 </body>
