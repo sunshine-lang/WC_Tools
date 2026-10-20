@@ -6,3 +6,6 @@ __pycache__/
 uploads/
 # 含 API Key
 config/config.json
+
+# 批次产物留在本地，不进版本库
+workspace/

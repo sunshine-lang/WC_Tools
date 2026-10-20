@@ -1,0 +1,16 @@
+{
+  "name": "WC 听风城堡",
+  "columns": {
+    "key": "key",
+    "source": "game_text_en",
+    "target": "game_text_de",
+    "limit": "limit"
+  },
+  "key_rules": "uploads/knowledge_db/key_rules.json",
+  "speakers": ["Chad", "Sammy", "Max", "Christine"],
+  "context": {
+    "reference": "../WC_UI文案翻译-1016.xlsx",
+    "guide": "../柠檬微趣_WC指导材料.xlsx"
+  },
+  "tags": ["<color=…>", "<size=…>", "<sprite=…>", "<i>", "{0}", "#{0}"]
+}

@@ -1,0 +1,7 @@
+{
+  "source_lang": "en-us",
+  "target_lang": "de",
+  "register": null,
+  "termbases": ["../WC术语库.xlsx"],
+  "tms": ["../../柠檬微趣WC/WC/TM/wcde.tmx"]
+}
