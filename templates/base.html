@@ -45,14 +45,18 @@
                     英德翻译记忆匹配
                 </a>
             </li>
-            {# 暂时隐藏译后质量检查入口，保留功能代码。
+            <li class="nav-item {% if active_page == 'tag_clean' %}active{% endif %}">
+                <a href="/tag_clean">
+                    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" style="margin-right: 12px; fill: currentColor;"><path d="M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6zm5.2 0L19.2 12l-4.6-4.6L16 6l6 6-6 6z"/></svg>
+                    标签空格清洗
+                </a>
+            </li>
             <li class="nav-item {% if active_page == 'qa' %}active{% endif %}">
                 <a href="/qa">
                     <svg viewBox="0 0 24 24" width="20" height="20" style="margin-right: 12px; fill: currentColor;"><path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                     译后质量检查
                 </a>
             </li>
-            #}
         </ul>
         <div class="sidebar-footer">
             <p>Version 2.0.0</p>

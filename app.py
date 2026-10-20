@@ -8,12 +8,13 @@ from flask import Flask, request, jsonify, render_template, send_file, redirect
 import logging
 from flask import cli
 
-from core_tools import TermScanner, TMMatcher, TermFilter, KeyClassifier, ContextProcessor, QAChecker
+from core_tools import TermScanner, TMMatcher, TermFilter, KeyClassifier, ContextProcessor, QAChecker, TagCleaner
 from core_tools.context_processor import validate_material_name, CONTEXT_POLICY
 from core_tools.term_scanner import TERM_POLICY
 from core_tools.tm_matcher import TM_POLICY
 from core_tools.term_filter import FILTER_POLICY
 from core_tools.qa_checker import QA_POLICY
+from core_tools.tag_cleaner import TAG_CLEAN_POLICY
 
 # ==========================================
 # Flask 初始化 & 屏蔽系统级输出 (Werkzeug)
@@ -326,6 +327,45 @@ def tm_result(task_id):
         return jsonify({'error': 'TM 结果不存在或尚未完成'}), 404
     return jsonify({'records': task['records'], 'counts': task['counts'],
                     'matched_count': task['matched_count'], 'tm_db': task['tm_db']})
+
+
+# =============== 标签空格清洗 ===============
+
+@app.route('/tag_clean')
+def page_tag_clean():
+    return render_template('tag_clean.html', active_page='tag_clean')
+
+
+@app.route('/upload/tag_clean', methods=['POST'])
+def upload_tag_clean():
+    uploaded = request.files.get('file')
+    if not uploaded or not uploaded.filename:
+        return jsonify({'error': '请选择要清洗的 XLSX 或 UTF-8 CSV 文件'}), 400
+    name = uploaded.filename.replace(chr(92), '/').rsplit('/', 1)[-1]
+    stem, extension = os.path.splitext(name)
+    if extension.lower() not in ('.xlsx', '.csv'):
+        return jsonify({'error': '请上传 XLSX 或 UTF-8 CSV 文件'}), 400
+    try:
+        validate_material_name(name)
+        cleaner = TagCleaner(request.form.get('column', 'game_text_de'))
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    task_id = str(uuid.uuid4())
+    input_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{task_id}_clean_in{extension.lower()}')
+    output_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{task_id}_cleaned{extension.lower()}')
+    uploaded.save(input_path)
+    tasks[task_id] = {'progress': 0, 'state': 'processing', 'status': '正在准备清洗...',
+                      'input_name': name, 'dl_name': stem + '_cleaned' + extension.lower()}
+    threading.Thread(target=cleaner.process, args=(input_path, output_path, tasks, task_id)).start()
+    return jsonify({'task_id': task_id})
+
+
+@app.route('/api/tag_clean/<task_id>')
+def tag_clean_result(task_id):
+    task = tasks.get(task_id, {})
+    if task.get('state') != 'completed' or task.get('tag_clean_policy') != TAG_CLEAN_POLICY:
+        return jsonify({'error': '清洗结果不存在或尚未完成'}), 404
+    return jsonify({key: task[key] for key in ('records', 'column', 'total', 'changed', 'skipped_formulas')})
 
 
 # =============== 译后质量检查 ===============

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}标签空格清洗{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/key_classifier.css?v=wc-rules-4">
+<link rel="stylesheet" href="/static/css/context.css?v=wc-compact-3">
+<link rel="stylesheet" href="/static/css/qa.css?v=qa-advanced-2">
+<link rel="stylesheet" href="/static/css/tag_clean.css?v=wc-clean-1">
+{% endblock %}
+{% block content %}
+<div class="instructions">
+    <strong>清理译文中的标签空格</strong>
+    <p>上传译后文件，清理指定列的标签周围多余空格。预览改动后下载新文件，再进入 <a href="/qa">译后质量检查</a>。</p>
+    <ul>
+        <li>默认清洗德语译文 game_text_de。英文和德语仅将标签前后连续的半角空格合并为一个，保留正常词间空格及换行。</li>
+        <li>中文列沿用 RO 规则，删除标签两侧的全部空白，包括相邻的换行。标签尖括号内的内容始终保持原样。</li>
+        <li>仅修改所选列；公式单元格跳过。输出保留原格式、其他列和工作表，不覆盖上传文件，也不调用模型。</li>
+    </ul>
+</div>
+<section class="module-card processing-module">
+    <h3>上传文件并清洗</h3>
+    <label class="clean-column">清洗列
+        <select id="clean-column">
+            <option value="game_text_de">德语译文（game_text_de）</option>
+            <option value="game_text_en">英文源文（game_text_en）</option>
+            <option value="game_text_cn">中文辅助（game_text_cn）</option>
+            <option value="cn">RO 中文原文（cn）</option>
+        </select>
+    </label>
+    <div class="upload-grid">
+        <button type="button" class="upload-area" id="choose-file-btn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+            <span id="file-name">点击选择文件（.xlsx / UTF-8 .csv）</span>
+        </button>
+        <input type="file" id="file-input" accept=".xlsx,.csv" aria-label="待清洗文件" hidden>
+    </div>
+    <button type="button" class="upload-btn" id="start-btn" disabled>开始清洗标签空格</button>
+    <div class="progress-container" id="progress-container">
+        <div class="progress-bar-bg"><div class="progress-bar" id="progress-bar"></div></div>
+        <div class="status-text" id="status-text" role="status" aria-live="polite">准备处理...</div>
+        <div id="clean-preview" hidden>
+            <h3>改动预览</h3>
+            <p id="clean-summary"></p>
+            <div class="preview-table-wrap">
+                <table class="context-table clean-table">
+                    <thead><tr><th>原位置 / Key</th><th>清洗前</th><th>清洗后</th></tr></thead>
+                    <tbody id="clean-rows"></tbody>
+                </table>
+            </div>
+        </div>
+        <button type="button" class="upload-btn" id="download-btn">下载清洗后文件</button>
+    </div>
+</section>
+{% endblock %}
+{% block extra_js %}<script src="/static/js/tag_clean.js?v=wc-clean-1"></script>{% endblock %}
