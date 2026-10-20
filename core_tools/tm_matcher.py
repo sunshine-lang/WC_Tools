@@ -231,16 +231,11 @@ class TMMatcher:
     def format_matches(self, matches):
         chunks = []
         for index, match in enumerate(matches, 1):
-            origin = match['origins'][0]
-            source = f"{self.filename} / {origin['document'] or '未提供原文档名'} / TU {origin['tu']}"
+            # 单元格只留状态、原文、译文。来源与差异仍在 matches 里保留，供页面追溯。
             lines = [f"[TM参考 {index}｜{match['match_type']}]", f"【英】{match['english']}",
-                     f"【德】{match['german']}", f"来源：{source}"]
-            if len(match['origins']) > 1:
-                lines.append(f"同句同译共 {len(match['origins'])} 处来源，完整记录可在页面查看")
+                     f"【德】{match['german']}"]
             if match['warnings']:
                 lines.append('提示：' + '；'.join(match['warnings']))
-            for change in match['changes']:
-                lines.append(f"差异：当前〔{change['current'] or '无'}〕／历史〔{change['history'] or '无'}〕")
             chunks.append('\n'.join(lines))
         return '\n\n'.join(chunks)
 

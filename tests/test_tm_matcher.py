@@ -73,7 +73,13 @@ class TMMatcherTests(unittest.TestCase):
         self.assertEqual(matches[0]['origins'][0]['document'], 'original1.xlsx')
         self.assertEqual(matches[0]['origins'][0]['previous'], 'Previous context')
         self.assertTrue(all(m['warnings'] for m in matches))
-        self.assertIn('客户历史.tmx', tm.format_matches(matches))
+
+        # 单元格只留状态与双语，来源仍保留在检索结果中供页面追溯。
+        formatted = tm.format_matches(matches)
+        self.assertNotIn('来源：', formatted)
+        self.assertNotIn('差异：', formatted)
+        self.assertIn('[TM参考 1｜原文一致]', formatted)
+        self.assertIn('Variante A', formatted)
 
     def test_restores_memoq_tags_parameters_and_literal_newline_from_utf16(self):
         root = self.save_tm([('', '')])
