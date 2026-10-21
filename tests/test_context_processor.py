@@ -14,6 +14,7 @@ from openpyxl.styles import Font
 
 from core_tools.context_processor import ContextProcessor, validate_material_name
 from core_tools.key_classifier import CATEGORIES
+from pipeline import run_normalize, run_classify
 
 
 class ContextProcessorTests(unittest.TestCase):
@@ -219,6 +220,65 @@ class ContextProcessorTests(unittest.TestCase):
         self.assertEqual(task['records'][2]['context'], '')
         self.assertIn('缺少完整对白 Key', task['records'][2]['warning'])
         self.assertEqual(task['asset_paths'], {})
+
+    def test_customer_note_keys_survive_pipeline_and_group_dialogue_without_emotions(self):
+        prefix = 'mdnew_forestconcert_mdnew_decoration_'
+        book = Workbook()
+        sheet = book.active
+        sheet.append(['note', 'limit', 'key', 'game_text_en', 'game_text_de'])
+        for row in [
+                [prefix + '3_10', None, 'Max', 'Tenth line', 'KEEP_TARGET'],
+                [prefix + '3_2', None, 'Christine', 'Second line', None],
+                [None, None, None, None, None],
+                [prefix + '5_1', None, 'Max', 'Other scene first', None],
+                [prefix + '5_2', None, 'Max', 'Other scene second', None],
+                [None, 30, prefix + 'name_3', 'Scene three prop', None]]:
+            sheet.append(row)
+        original = [[cell.value for cell in row] for row in sheet]
+        path = self.root / 'customer.xlsx'
+        book.save(path)
+        book.close()
+        before = path.read_bytes()
+        ctx = {'game': {'speakers': ['Max', 'Christine'], 'key_rules': 'uploads/knowledge_db/key_rules.json'}}
+        normalized, classified = self.root / 'normalized.xlsx', self.root / 'classified.xlsx'
+        for runner, source, target in [(run_normalize, path, normalized), (run_classify, normalized, classified)]:
+            task = runner(ctx, source, target)
+            self.assertEqual(task['state'], 'completed', task.get('status'))
+        task = self.run_context(classified, enhance=False)
+        records = task['records']
+        self.assertEqual([record['key'] for record in records[:2]], [prefix + '3_10', prefix + '3_2'])
+        self.assertEqual([record['speaker'] for record in records[:2]], ['Max', 'Christine'])
+        context = records[0]['context']
+        self.assertLess(context.index('Second line'), context.index('Tenth line'))
+        self.assertIn('Scene three prop', context)
+        self.assertNotIn('Other scene', context)
+        self.assertEqual(context, records[1]['context'])
+        self.assertNotIn('Tenth line', records[2]['context'])
+        self.assertIn('Tenth line', records[-1]['context'])
+        result = load_workbook(task['result_file'])
+        self.assertEqual([[cell.value for cell in row[:5]] for row in result.active], original)
+        result.close()
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_note_identity_requires_full_dialogue_key_and_preserves_existing_key(self):
+        prefix = 'mdnew_forestconcert_mdnew_decoration_'
+        for note_header in ['note', '备注']:
+            with self.subTest(note_header=note_header):
+                book = Workbook()
+                book.active.append(['key', 'speaker', note_header, 'game_text_en'])
+                for row in [
+                        ['Max', None, prefix + 'intro_1', 'Without normalized speaker'],
+                        ['Max', 'Max', 'ordinary note', 'No guessed scene'],
+                        [prefix + '3_1', 'Max', prefix + '5_1', 'Existing key wins'],
+                        ['cat_multiboards_title', None, prefix + '5_1', 'Keep UI key'],
+                        [None, 'Max', prefix + '5_1', 'Missing key'],
+                        ['Max', 'Max', prefix + 'name_3', 'Decoration is not dialogue']]:
+                    book.active.append(row)
+                records = self.processor.read_records(book, 'customer.xlsx')
+                self.assertEqual([record['key'] for record in records], [
+                    prefix + 'intro_1', 'Max', prefix + '3_1', 'cat_multiboards_title', prefix + '5_1', 'Max'])
+                self.assertEqual(records[0]['speaker'], 'Max')
+                book.close()
 
     def test_ui_context_contains_only_related_source_and_no_processing_metadata(self):
         path = self.main([

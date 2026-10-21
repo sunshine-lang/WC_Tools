@@ -117,7 +117,7 @@ def run_term(ctx: dict, source: Path, target: Path) -> dict:
 def run_term_filter(ctx: dict, source: Path, target: Path) -> dict:
     from core_tools.term_filter import TermFilter
 
-    module = TermFilter()
+    module = TermFilter(materials=ctx.get('materials'))
     tasks, task = _task()
     module.process(str(source), str(target), tasks, 't')
     return task

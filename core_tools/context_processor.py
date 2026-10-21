@@ -17,10 +17,21 @@ DEFAULT_REFERENCE = MATERIAL_DIR / 'WC_UI文案翻译-1016.xlsx'
 DEFAULT_GUIDE = MATERIAL_DIR / '柠檬微趣_WC指导材料.xlsx'
 CONTEXT_POLICY = 'wc-ui-compact-v2'
 STATUSES = ('已关联', '缺资料', '待确认')
+DIALOGUE_KEY = re.compile(r'mdnew_(.+)_mdnew_decoration_(intro|\d+)_(\d+)', re.IGNORECASE)
 
 
 def text(value):
     return '' if value is None else str(value)
+
+
+def dialogue_identity(key, speaker, note):
+    """兼容客户把完整对白 Key 放在 note、说话人放在 key 的表格。"""
+    key, speaker, note = (text(value).strip() for value in (key, speaker, note))
+    if not DIALOGUE_KEY.fullmatch(key) and DIALOGUE_KEY.fullmatch(note):
+        if not key or key.casefold() == speaker.casefold() or (
+                not speaker and re.fullmatch(r"[A-Za-z][A-Za-z .'-]{0,60}", key)):
+            return note, speaker or key
+    return key, speaker
 
 
 def validate_material_name(name):
@@ -90,6 +101,7 @@ class ContextProcessor:
                     key = note.strip() if re.match(r'^(mdnew_|story|Fire)', note.strip()) else ''
                     if key:
                         note = ''
+                key, speaker = dialogue_identity(key, speaker, note)
                 records.append({
                     'id': f'{sheet.title}:{row}', 'sheet': sheet.title, 'row': row, 'width': width,
                     'source': f'{source_name} / {sheet.title}!{row}', 'key': key,
@@ -105,7 +117,7 @@ class ContextProcessor:
         key = record['key'].casefold()
         card = re.fullmatch(r'a(.+)_set(\d+)(?:_(\d+))?_name', key)
         decor = re.fullmatch(r'mdnew_(.+)_mdnew_decoration_name_(\d+)', key)
-        dialogue = re.fullmatch(r'mdnew_(.+)_mdnew_decoration_(intro|\d+)_(\d+)', key)
+        dialogue = DIALOGUE_KEY.fullmatch(key)
         if card:
             activity, number, item = card.groups()
             return activity, f'{activity}/set/{int(number)}', f'卡册{int(number)}', int(item or 0), ''

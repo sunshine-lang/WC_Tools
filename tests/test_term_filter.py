@@ -77,6 +77,26 @@ class TermFilterTests(unittest.TestCase):
         self.assertNotIn('TEST_SECRET', json.dumps(payload))
         self.assertNotIn('TEST_SECRET', json.dumps(self.tool.status()))
 
+    def test_customer_note_and_world_material_reach_model_without_changing_source(self):
+        key = 'mdnew_forestconcert_mdnew_decoration_3_1'
+        rows = [[key, 'Max', 'Max', 'With a key inside!', 'KEEP_TARGET', '活动对白', 'Scene three', 'key (Schlüssel)']]
+        path = self.source(rows, ['note', 'key', 'speaker', 'game_text_en', 'game_text_de', '分类', 'Context', '关联术语'])
+        self.tool = TermFilter(self.config, materials={'world': 'WORLD_SENTINEL', 'cast': 'CAST_SENTINEL', 'style': 'STYLE_SENTINEL'})
+        response = self.response([{'id': 0, 'decision': 'keep', 'reason': '本句指钥匙'}])
+        with patch('core_tools.term_filter.requests.post', return_value=response) as post:
+            task = self.run_filter(path)
+        self.assertEqual(task['state'], 'completed', task.get('status'))
+        messages = post.call_args.kwargs['json']['messages']
+        self.assertIn('[游戏背景]\nWORLD_SENTINEL', messages[1]['content'])
+        self.assertIn('CAST_SENTINEL', messages[1]['content'])
+        self.assertIn('STYLE_SENTINEL', messages[1]['content'])
+        payload = json.loads(messages[-1]['content'])
+        self.assertEqual((payload['key'], payload['speaker']), (key, 'Max'))
+        self.assertNotIn('KEEP_TARGET', json.dumps(messages))
+        result = load_workbook(task['result_file'])
+        self.assertEqual([cell.value for cell in result.active[2]][:7], rows[0][:7])
+        result.close()
+
     def test_incomplete_duplicate_invented_and_empty_reason_responses_rejected(self):
         record = dict(english='Hello', context='', category='', key='', speaker='', emotion='', candidates=['Chad (Chad)'])
         for items in [[], [{'id': 2, 'decision': 'keep', 'reason': 'new'}],
