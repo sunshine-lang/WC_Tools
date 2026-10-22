@@ -142,7 +142,7 @@ class TagCleanerTests(unittest.TestCase):
         with patch.dict(server.app.config, {'UPLOAD_FOLDER': str(self.root)}):
             client = server.app.test_client()
             html = client.get('/tag_clean').get_data(as_text=True)
-            self.assertLess(html.index('href="/tm"'), html.index('href="/tag_clean"'))
+            self.assertLess(html.index('href="/pipeline"'), html.index('href="/tag_clean"'))
             self.assertLess(html.index('href="/tag_clean"'), html.index('href="/qa"'))
             self.assertEqual(client.post('/upload/tag_clean').status_code, 400)
             self.assertEqual(client.post('/upload/tag_clean', data={'file': (io.BytesIO(b'x'), 'bad.txt')}).status_code, 400)

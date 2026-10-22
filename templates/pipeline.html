@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WC 翻译工作台</title>
+<style>
+:root{
+  --brand:#3b82f6; --brand-dark:#2563eb;
+  --sidebar:#1e293b; --sidebar-2:#172033;
+  --bg:#f1f5f9; --card:#fff; --line:#e2e8f0;
+  --ink:#334155; --muted:#64748b; --head:#0f172a;
+  --ok:#10b981; --warn:#f59e0b; --bad:#ef4444; --violet:#8b5cf6;
+  --radius:12px;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; display:flex; overflow:hidden; background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px; line-height:1.6;
+}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+
+/* sidebar */
+.sidebar{width:300px; flex:0 0 300px; background:var(--sidebar); color:#e2e8f0; display:flex; flex-direction:column; overflow-y:auto}
+.brand{padding:20px 22px 16px; border-bottom:1px solid rgba(255,255,255,.06)}
+.brand h1{margin:0; font-size:16px; letter-spacing:.04em; color:#fff}
+
+.batch{margin:16px 16px 8px; padding:12px 14px; border-radius:10px; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.07)}
+.batch .name{font-size:12px; color:#cbd5e1; word-break:break-all; line-height:1.45}
+.batch .meta{margin-top:8px; display:flex; gap:6px; flex-wrap:wrap}
+.pill{font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(59,130,246,.18); color:#93c5fd; border:1px solid rgba(59,130,246,.3)}
+.pill.gray{background:rgba(148,163,184,.14); color:#cbd5e1; border-color:rgba(148,163,184,.25)}
+
+.stages{list-style:none; margin:8px 0 12px; padding:0 12px}
+.stage-item{display:grid; grid-template-columns:26px 1fr auto auto; align-items:center; gap:8px;
+  padding:10px; border-radius:10px; cursor:pointer; transition:.15s; border:1px solid transparent}
+.stage-item:hover{background:rgba(255,255,255,.05)}
+.stage-item.active{background:rgba(59,130,246,.16); border-color:rgba(59,130,246,.35)}
+.stage-item .num{font-size:11px; color:#64748b; text-align:center; font-variant-numeric:tabular-nums}
+.stage-item .title{font-size:13px; color:#e2e8f0}
+.stage-item .title small{display:block; font-size:11px; color:#7c8aa0; margin-top:1px}
+.stage-item .dot{width:9px; height:9px; border-radius:50%; background:#475569; justify-self:center}
+.stage-item[data-state="running"] .dot{background:var(--brand); animation:pulse 1.1s infinite}
+.stage-item[data-state="review"] .dot{background:var(--warn); animation:pulse 1.4s infinite}
+.stage-item[data-state="done"] .dot{background:var(--ok)}
+.stage-item[data-state="failed"] .dot{background:var(--bad)}
+.stage-item[data-state="pending"]{opacity:.5; cursor:not-allowed}
+.stage-item .flag{font-size:10px; color:#64748b; border:1px solid rgba(255,255,255,.12); padding:0 5px; border-radius:4px}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(59,130,246,.55)}50%{box-shadow:0 0 0 6px rgba(59,130,246,0)}}
+
+.side-foot{margin-top:auto; padding:12px}
+.side-btn{width:100%; text-align:left; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08);
+  color:#e2e8f0; padding:11px 13px; border-radius:10px; cursor:pointer; font-size:13px; display:flex; align-items:center; gap:9px}
+.side-btn:hover{background:rgba(255,255,255,.09)}
+.side-btn.active{background:rgba(59,130,246,.18); border-color:rgba(59,130,246,.4); color:#fff}
+.side-btn .cnt{margin-left:auto; font-size:11px; color:#93c5fd}
+
+/* main */
+.main{flex:1; display:flex; flex-direction:column; min-width:0}
+.topbar{height:64px; flex:0 0 64px; background:var(--card); border-bottom:1px solid var(--line);
+  display:flex; align-items:center; gap:14px; padding:0 22px}
+.proj{display:flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid var(--line); border-radius:9px; cursor:pointer; background:#fff}
+.proj:hover{border-color:#cbd5e1}
+.proj.disabled{opacity:.5; pointer-events:none}
+.proj .n{font-size:13px; color:var(--head); font-weight:600}
+.proj .l{font-size:11px; color:var(--muted)}
+.topbar h2{margin:0 0 0 6px; font-size:14px; color:var(--head); font-weight:600}
+.topbar .spacer{flex:1}
+.progress{width:180px; height:6px; border-radius:999px; background:#e2e8f0; overflow:hidden}
+.progress > i{display:block; height:100%; width:0; background:var(--brand); transition:width .3s}
+.counter{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; min-width:60px; text-align:right}
+.btn{border:1px solid var(--line); background:#fff; color:var(--ink); padding:7px 14px; border-radius:9px;
+  font-size:13px; cursor:pointer; transition:.15s; white-space:nowrap}
+.btn:hover:not(:disabled){border-color:#cbd5e1; background:#f8fafc}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn.primary{background:var(--brand); border-color:var(--brand); color:#fff}
+.btn.primary:hover:not(:disabled){background:var(--brand-dark); border-color:var(--brand-dark)}
+.btn.warn{background:#fff7ed; border-color:#fed7aa; color:#c2410c}
+.btn.bad{background:#fef2f2; border-color:#fecaca; color:#b91c1c}
+.btn.ghost{background:transparent; border-color:transparent; color:var(--muted)}
+.btn.ghost:hover:not(:disabled){background:#f1f5f9; border-color:transparent}
+.btn.small{padding:5px 10px; font-size:12px; border-radius:7px}
+.fail-toggle{display:flex; align-items:center; gap:7px; cursor:pointer}
+.fail-toggle[hidden]{display:none}
+
+.content{flex:1; overflow-y:auto; padding:24px}
+.wrap{max-width:1080px; margin:0 auto}
+
+/* upload */
+.dropzone{border:2px dashed #cbd5e1; border-radius:16px; background:#fff; padding:52px 24px; text-align:center; transition:.18s; cursor:pointer}
+.dropzone:hover{border-color:var(--brand); background:#f8fbff}
+.dropzone .icon{font-size:34px}
+.dropzone h3{margin:14px 0 6px; font-size:16px; color:var(--head)}
+.dropzone p{margin:0; color:var(--muted); font-size:13px}
+.dropzone .hint{margin-top:18px; font-size:12px; color:#94a3b8}
+.filechip{display:none; margin-top:20px; padding:14px 18px; background:#fff; border:1px solid var(--line); border-radius:12px}
+.filechip.show{display:flex; align-items:center; gap:14px}
+.filechip .ico{width:38px;height:38px;border-radius:9px;background:#ecfdf5;color:#059669;display:grid;place-items:center;font-size:17px;flex:0 0 auto}
+.filechip .nm{font-size:13px; color:var(--head); word-break:break-all}
+.filechip .sub{font-size:12px; color:var(--muted)}
+.filechip .actions{margin-left:auto; display:flex; gap:8px; align-items:center}
+
+/* panel */
+.panel{background:#fff; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden}
+.panel-head{display:flex; align-items:flex-start; gap:12px; padding:18px 22px; border-bottom:1px solid var(--line)}
+.panel-head .no{width:34px;height:34px;border-radius:9px;background:#eff6ff;color:var(--brand-dark);
+  display:grid;place-items:center;font-size:13px;font-weight:600;flex:0 0 auto;font-variant-numeric:tabular-nums}
+.panel-head h3{margin:0; font-size:15px; color:var(--head)}
+.panel-head .artifact{margin-top:2px; font-size:12px; color:var(--muted)}
+.panel-head .right{margin-left:auto; text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:6px}
+.badge{font-size:11px; padding:3px 9px; border-radius:999px; border:1px solid}
+.badge.pending{background:#f8fafc; border-color:var(--line); color:var(--muted)}
+.badge.running{background:#eff6ff; border-color:#bfdbfe; color:var(--brand-dark)}
+.badge.review{background:#fffbeb; border-color:#fde68a; color:#b45309}
+.badge.done{background:#ecfdf5; border-color:#a7f3d0; color:#047857}
+.badge.failed{background:#fef2f2; border-color:#fecaca; color:#b91c1c}
+
+.desc{padding:14px 22px; color:var(--muted); font-size:13px; border-bottom:1px solid #f1f5f9}
+.stats{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; padding:18px 22px}
+.stat{background:#f8fafc; border:1px solid #eef2f7; border-radius:10px; padding:12px 14px}
+.stat .k{font-size:11px; color:var(--muted)}
+.stat .v{font-size:21px; color:var(--head); font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px}
+.stat .v small{font-size:12px; font-weight:400; color:var(--muted); margin-left:3px}
+.preview{padding:0 22px 20px}
+.preview .cap{font-size:12px; color:var(--muted); margin-bottom:8px}
+.tbl{width:100%; border-collapse:collapse; font-size:12.5px}
+.tbl th{text-align:left; font-weight:600; color:var(--muted); background:#f8fafc; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap}
+.tbl td{padding:8px 10px; border-bottom:1px solid #f1f5f9; vertical-align:top}
+.tbl tr:last-child td{border-bottom:none}
+.tbl td.mono{font-family:ui-monospace,Menlo,Consolas,monospace; color:#0f172a; font-size:12px}
+.scroll{overflow-x:auto; border:1px solid var(--line); border-radius:10px}
+.cell{background:#0f172a; color:#cbd5e1; border-radius:10px; padding:14px 16px; font-size:12px;
+  font-family:ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; line-height:1.7; overflow-x:auto}
+.cell .tag{color:#7dd3fc}
+.cell .lbl{color:#94a3b8}
+.bars{display:flex; flex-direction:column; gap:10px}
+.bar-row{display:grid; grid-template-columns:130px 1fr 52px; align-items:center; gap:12px; font-size:12.5px}
+.bar-row .track{height:9px; border-radius:999px; background:#eef2f7; overflow:hidden}
+.bar-row .fill{height:100%; border-radius:999px; width:0; transition:width .6s cubic-bezier(.2,.7,.3,1)}
+.bar-row .n{text-align:right; color:var(--muted); font-variant-numeric:tabular-nums}
+.checks{display:flex; flex-direction:column; gap:9px}
+.check{display:flex; gap:10px; align-items:flex-start; padding:9px 12px; border:1px solid var(--line); border-radius:9px; background:#fff; font-size:12.5px}
+.check .m{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:11px;color:#fff;flex:0 0 auto;margin-top:1px}
+.check.ok .m{background:var(--ok)}
+.check.warn .m{background:var(--warn)}
+.check .t{flex:1}
+.check .t b{font-weight:600; color:var(--head)}
+.check .t span{color:var(--muted); margin-left:6px}
+.check .lv{font-size:11px; padding:1px 7px; border-radius:999px; border:1px solid var(--line); color:var(--muted)}
+
+/* 确认区 */
+.reviewbox{margin:0 22px 20px; border:1px solid #fde68a; background:#fffdf5; border-radius:12px; padding:16px 18px}
+.reviewbox h4{margin:0 0 10px; font-size:13px; color:#92400e}
+.reviewbox ul{margin:0; padding-left:18px; color:#78350f; font-size:12.5px; line-height:1.9}
+.reviewbox li::marker{color:#f59e0b}
+
+/* 阻断 / 提示 */
+.notice{display:flex; align-items:center; gap:12px; margin:0 22px 18px; padding:12px 16px; border-radius:10px;
+  border:1px solid #fde68a; background:#fffbeb; color:#92400e; font-size:12.5px; line-height:1.6}
+.notice b{color:#78350f}
+.notice .btn{margin-left:auto; flex:0 0 auto}
+.notice.ok{border-color:#a7f3d0; background:#ecfdf5; color:#047857}
+.notice.ok b{color:#065f46}
+.panel > .notice{margin-top:16px}
+.lib-notice{margin:0 0 16px}
+
+.panel-foot{padding:14px 22px; border-top:1px solid var(--line); background:#fbfcfe; display:flex; gap:10px; align-items:center}
+.panel-foot .note{font-size:12px; color:var(--muted); margin-left:auto}
+.spinner{width:14px;height:14px;border:2px solid #bfdbfe;border-top-color:var(--brand);border-radius:50%;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* 资料库 */
+.lib-head{display:flex; align-items:center; gap:12px; margin-bottom:18px}
+.lib-head h3{margin:0; font-size:16px; color:var(--head)}
+.lib-head p{margin:2px 0 0; font-size:12.5px; color:var(--muted)}
+.lib-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px}
+.lib-card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px 18px}
+.lib-card.wide{grid-column:1 / -1}
+.lib-card .top{display:flex; align-items:center; gap:10px}
+.lib-card .ic{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:15px;background:#eff6ff;color:var(--brand-dark);flex:0 0 auto}
+.lib-card .nm{font-size:13.5px; color:var(--head); font-weight:600}
+.lib-card .req{font-size:11px; padding:1px 6px; border-radius:4px; border:1px solid var(--line); color:var(--muted); margin-left:6px}
+.lib-card .req.must{background:#fef2f2; border-color:#fecaca; color:#b91c1c}
+.lib-card .ds{font-size:12px; color:var(--muted); margin:8px 0 10px}
+.lib-card .file{font-size:12px; font-family:ui-monospace,Menlo,Consolas,monospace; color:#0f172a; background:#f8fafc; border:1px solid var(--line); border-radius:8px; padding:7px 10px; word-break:break-all}
+.lib-card .file.empty{color:#94a3b8; font-style:italic}
+.lib-card .row{display:flex; align-items:center; gap:10px; margin-top:10px}
+.lib-card .row .actions{margin-left:auto; display:flex; gap:8px; align-items:center}
+.lib-card .st{font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid}
+.st.ok{background:#ecfdf5; border-color:#a7f3d0; color:#047857}
+.st.no{background:#f8fafc; border-color:var(--line); color:var(--muted)}
+
+/* modal */
+.mask{position:fixed; inset:0; background:rgba(15,23,42,.45); display:none; place-items:center; z-index:50}
+.mask.show{display:grid}
+.modal{width:460px; background:#fff; border-radius:14px; padding:24px; box-shadow:0 20px 60px rgba(15,23,42,.25)}
+.modal h3{margin:0 0 4px; font-size:16px; color:var(--head)}
+.modal p{margin:0 0 18px; font-size:12.5px; color:var(--muted)}
+.modal .warning{margin:14px 0 0; padding:10px 12px; background:#fffbeb; border:1px solid #fde68a;
+  border-radius:8px; color:#92400e; font-size:12px; line-height:1.65}
+.field{margin-bottom:14px}
+.field label{display:block; font-size:12px; color:var(--muted); margin-bottom:6px}
+.field input,.field select{width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:9px; font-size:13px; color:var(--ink); background:#fff}
+.field .two{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.modal-foot{display:flex; gap:10px; justify-content:flex-end; margin-top:20px}
+
+/* 批次选择 / 真实接口 */
+.batch-select{width:100%; margin-top:9px; padding:6px 8px; border-radius:7px; border:1px solid rgba(255,255,255,.12);
+  background:rgba(15,23,42,.5); color:#cbd5e1; font-size:11.5px; outline:none}
+.batch-select option{background:#1e293b; color:#e2e8f0}
+
+.toast{position:fixed; right:22px; bottom:120px; z-index:80; max-width:420px; padding:11px 15px;
+  border-radius:10px; background:#0f172a; color:#fff; font-size:12.5px; line-height:1.6;
+  box-shadow:0 14px 40px rgba(15,23,42,.35); opacity:0; transform:translateY(6px);
+  pointer-events:none; transition:.18s}
+.toast.show{opacity:1; transform:none}
+.toast.ok{background:#065f46}
+.toast.bad{background:#7f1d1d}
+
+.runbar{height:6px; width:260px; flex:0 0 auto; border-radius:999px; background:#e2e8f0; overflow:hidden}
+.runbar > i{display:block; height:100%; width:0; background:var(--brand); transition:width .25s}
+.check.bad .m{background:var(--bad)}
+.empty{padding:16px; border:1px dashed var(--line); border-radius:9px; color:var(--muted); font-size:12.5px; text-align:center}
+
+.project-list{display:flex; flex-direction:column; gap:7px; max-height:250px; overflow-y:auto; margin-bottom:16px}
+.project-item{display:flex; align-items:center; gap:10px; width:100%; padding:9px 11px; border:1px solid var(--line);
+  border-radius:9px; background:#fff; text-align:left; cursor:pointer; font-size:13px; color:var(--ink)}
+.project-item:hover{border-color:#cbd5e1; background:#f8fafc}
+.project-item.active{border-color:#bfdbfe; background:#eff6ff}
+.project-item .nm{font-weight:600; color:var(--head)}
+.project-item .sub{font-size:11px; color:var(--muted)}
+.project-item .right{margin-left:auto; font-size:11px; color:var(--brand-dark)}
+.divider{font-size:11px; color:var(--muted); letter-spacing:.08em; margin:4px 0 12px;
+  border-top:1px solid var(--line); padding-top:12px}
+.field-note{margin:7px 0 0; font-size:11.5px; color:var(--muted)}
+.modal{max-height:86vh; overflow-y:auto}
+
+@media (max-width:1280px){
+  .runbar{width:180px}
+}
+
+/* log */
+.logbar{flex:0 0 auto; height:104px; background:var(--sidebar-2); color:#cbd5e1; font-size:12px;
+  font-family:ui-monospace,Menlo,Consolas,monospace; padding:10px 18px; overflow-y:auto; border-top:1px solid rgba(255,255,255,.06)}
+.logbar .ln{opacity:.55; white-space:nowrap}
+.logbar .ln:last-child{opacity:1; color:#e2e8f0}
+.logbar .t{color:#64748b; margin-right:10px}
+.logbar .ok{color:#6ee7b7}
+.logbar .run{color:#93c5fd}
+.logbar .bad{color:#fca5a5}
+.logbar .warn{color:#fcd34d}
+
+@media (max-width:1280px){
+  .topbar{gap:10px; padding:0 16px}
+  .progress{width:120px}
+  #elapsed{display:none}
+  .topbar .btn{padding:6px 10px}
+}
+@media (max-width:1100px){ .lib-grid{grid-template-columns:1fr} .stats{grid-template-columns:repeat(2,1fr)} }
+.side-foot a { text-decoration: none; }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="brand">
+    <h1>WC 翻译工作台</h1>
+  </div>
+
+  <div class="batch">
+    <div class="name" id="batchName">未载入批次</div>
+    <div class="meta">
+      <span class="pill" id="pillRows">— 行</span>
+      <span class="pill gray" id="pillLang">en → de</span>
+      <span class="pill gray" id="pillProj">听风城堡</span>
+    </div>
+    <select class="batch-select" id="batchSelect" hidden></select>
+  </div>
+
+  <ul class="stages" id="stageList"></ul>
+
+  <div class="side-foot">
+    <button class="side-btn" id="libBtn">
+      <span>📚</span><span>资料库</span><span class="cnt" id="libCnt">— / —</span>
+    </button>
+    <a class="side-btn" href="/tag_clean">标签空格清洗</a>
+    <a class="side-btn" href="/qa">译后质量检查</a>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <div class="proj" id="projBtn" title="新建项目">
+      <div>
+        <div class="n" id="projName">听风城堡</div>
+        <div class="l" id="projLang">en → de</div>
+      </div>
+      <span style="color:#94a3b8;font-size:14px;line-height:1">＋</span>
+    </div>
+    <button class="btn ghost back" id="backBtn" hidden>← 返回工作台</button>
+    <h2 id="topTitle">批次工作台</h2>
+    <div class="spacer"></div>
+    <span class="counter" id="counter">— / —</span>
+    <div class="progress" id="progressWrap"><i id="progressFill"></i></div>
+    <span class="counter" id="elapsed">—</span>
+    <button class="btn primary" id="actionBtn" hidden>开始准备</button>
+    <button class="btn" id="resetBtn" disabled title="重跑或清空本批次">重置</button>
+  </div>
+
+  <div class="content">
+    <div class="wrap" id="view"></div>
+  </div>
+
+  <div class="logbar" id="log"></div>
+</div>
+
+<div class="mask" id="projMask">
+  <div class="modal">
+    <h3>项目</h3>
+    <p>一个项目对应一套资料库与一套规则；批次挂在项目下。</p>
+    <div class="project-list" id="projectList"></div>
+    <div class="divider">新建项目</div>
+    <div class="field">
+      <label>项目名称</label>
+      <input id="npName" placeholder="例如：柠檬微趣 · 新作">
+    </div>
+    <div class="field">
+      <label>语言对</label>
+      <div class="two">
+        <select id="npSrc"><option value="en">en</option></select>
+        <select id="npTgt"><option value="de">de</option></select>
+      </div>
+      <div class="field-note">当前版本只接 WC 的 en → de 流水线。</div>
+    </div>
+    <div class="warning">项目、资料库和批次都会保存到 workspace/pipeline，切换项目不会清空已有批次。</div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeProject()">取消</button>
+      <button class="btn primary" onclick="createProject()">创建项目</button>
+    </div>
+  </div>
+</div>
+
+<div class="mask" id="actionMask">
+  <div class="modal">
+    <h3 id="actionTitle">操作确认</h3>
+    <p id="actionBody"></p>
+    <div class="warning" id="actionWarn" hidden></div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeAction()">取消</button>
+      <button class="btn bad" id="actionDanger" hidden onclick="runActionDanger()">清空当前批次</button>
+      <button class="btn primary" id="actionOk" onclick="runActionOk()">确定</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="batchFile" accept=".xlsx,.csv" hidden>
+<input type="file" id="libFile" hidden>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ------------------------------------------------------------------ 基础 */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const logEl = $('log');
+
+const state = {
+  view:'batch',
+  project:null, projects:[], library:[], server:{},
+  batch:null, batches:[], stages:[], stageDefs:[],
+  activeIndex:-1, follow:true, busy:false,
+  pollTimer:null, pendingLibSlot:null,
+  lastStates:{}, lastBatchId:null, initialized:false
+};
+
+function log(text, kind){
+  const d = new Date();
+  const t = [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+  const el = document.createElement('div');
+  el.className = 'ln';
+  el.innerHTML = `<span class="t">${t}</span><span class="${kind||''}">${esc(text)}</span>`;
+  logEl.appendChild(el);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+let toastTimer = null;
+function toast(message, kind='bad'){
+  const el = $('toast');
+  el.textContent = message;
+  el.className = `toast show ${kind}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ el.className = 'toast'; }, 4800);
+}
+
+function downloadNotice(name){
+  toast(`已开始下载 ${name}`, 'ok');
+}
+
+async function copyDownload(url){
+  const absolute = new URL(url, location.href).href;
+  try {
+    await navigator.clipboard.writeText(absolute);
+    toast('下载链接已复制，粘贴到浏览器新标签页打开', 'ok');
+  } catch (error) {
+    openAction({ title:'下载链接', body:absolute, okLabel:'关闭', onOk:closeAction });
+  }
+}
+
+const modalAction = { ok:null, danger:null };
+
+function openAction({title, body='', warning='', okLabel='确定', okClass='primary', onOk=null, dangerLabel='', onDanger=null}){
+  $('actionTitle').textContent = title;
+  $('actionBody').textContent = body;
+  const warn = $('actionWarn');
+  warn.textContent = warning;
+  warn.hidden = !warning;
+  const ok = $('actionOk');
+  ok.textContent = okLabel;
+  ok.className = 'btn ' + okClass;
+  ok.hidden = !onOk;
+  const danger = $('actionDanger');
+  danger.textContent = dangerLabel;
+  danger.hidden = !onDanger;
+  modalAction.ok = onOk;
+  modalAction.danger = onDanger;
+  $('actionMask').classList.add('show');
+}
+
+function closeAction(){
+  $('actionMask').classList.remove('show');
+  modalAction.ok = null;
+  modalAction.danger = null;
+}
+
+function runActionOk(){
+  const callback = modalAction.ok;
+  if(callback) callback();
+}
+
+function runActionDanger(){
+  const callback = modalAction.danger;
+  if(callback) callback();
+}
+
+async function api(url, options={}){
+  const response = await fetch(url, options);
+  let data;
+  try { data = await response.json(); } catch { data = {error:`服务器返回了非 JSON 响应（HTTP ${response.status}）`}; }
+  if(!response.ok || data.error) throw new Error(data.error || `请求失败（HTTP ${response.status}）`);
+  return data;
+}
+
+const requiredReady = () => state.library.filter(x=>x.req).every(x=>x.ready);
+const missingRequired = () => state.library.filter(x=>x.req && !x.ready).map(x=>x.name);
+
+/* ------------------------------------------------------------------ 状态装载 */
+function applyBootstrap(data, initial=false){
+  const projectChanged = !!state.project && !!data.project && state.project.id !== data.project.id;
+  const batchChanged = (state.batch?.id || null) !== (data.batch?.id || null);
+
+  state.projects = data.projects || [];
+  state.project = data.project || null;
+  state.stageDefs = data.stage_defs || state.stageDefs;
+  state.library = state.project?.library || [];
+  state.batches = data.batches || [];
+  state.batch = data.batch || null;
+  state.server = data.server || {};
+  state.stages = state.batch
+    ? (state.batch.stages || [])
+    : state.stageDefs.map(s => ({...s, state:'pending', stats:[], preview:{}, checks:[], review:[],
+                                 progress:0, status:'', message:'', seconds:0, download_url:''}));
+
+  if(!initial && projectChanged) log(`已切换项目：${state.project.name}`, '');
+  if(!initial && batchChanged && state.batch) log(`已打开批次：${state.batch.name} · ${state.batch.rows} 行`, '');
+  trackTransitions(initial, batchChanged);
+  if(initial || batchChanged || projectChanged){
+    state.activeIndex = -1;
+    state.follow = true;
+  }
+  const picked = chooseActive();
+  if(state.follow || state.activeIndex < 0) state.activeIndex = picked;
+  state.lastBatchId = state.batch?.id || null;
+
+  if(initial){
+    log('工作台就绪', '');
+    if(state.batch) log(`批次 ${state.batch.name} · ${state.batch.rows} 行`, '');
+    if(!state.server.llm_ready) log('模型接口未就绪：术语筛选节点会失败，请检查 config/config.json', 'warn');
+    if(!state.server.tm_ready) log('TM 语义模型配置未就绪：请检查 config/config.json 中的 embedding / rerank', 'warn');
+    if(!state.server.key_rules_ready) log('缺少分类规则 profiles/game/wc_key_rules.json', 'warn');
+  }
+}
+
+function trackTransitions(initial, batchChanged){
+  if(!state.batch){ state.lastStates = {}; return; }
+  if(initial || batchChanged) state.lastStates = {};
+  for(const s of state.stages){
+    const prev = state.lastStates[s.key];
+    if(prev && prev !== s.state){
+      if(s.state === 'running') log(`${s.no} ${s.title} 开始…`, 'run');
+      else if(s.state === 'done') log(`${s.no} ${s.title} 完成${s.seconds ? ` · ${s.seconds}s` : ''}`, 'ok');
+      else if(s.state === 'review') log(`${s.no} ${s.title} 完成 · 等待确认`, 'ok');
+      else if(s.state === 'failed') log(`${s.no} ${s.title} 失败：${s.message || ''}`, 'bad');
+    }
+    state.lastStates[s.key] = s.state;
+  }
+}
+
+function chooseActive(){
+  if(!state.batch || !state.stages.length) return -1;
+  if(state.stages.every(s=>s.state === 'pending')) return -1;
+  if(state.follow){
+    const running = state.stages.findIndex(s=>s.state === 'running');
+    if(running >= 0) return running;
+    const review = state.stages.findIndex(s=>s.state === 'review');
+    if(review >= 0) return review;
+    const failed = state.stages.findIndex(s=>s.state === 'failed');
+    if(failed >= 0) return failed;
+    for(let i=state.stages.length-1; i>=0; i--){
+      if(state.stages[i].state === 'done') return i;
+    }
+    const pending = state.stages.findIndex(s=>s.state === 'pending');
+    if(pending >= 0) return pending;
+    return state.stages.length - 1;
+  }
+  if(state.activeIndex >= 0 && state.activeIndex < state.stages.length) return state.activeIndex;
+  return 0;
+}
+
+/* ------------------------------------------------------------------ 顶栏 / 侧栏 */
+function primaryAction(){
+  if(!state.batch) return null;
+  if(state.batch.running || state.busy) return {label:'执行中…', disabled:true};
+  if(!requiredReady()) return {label:'补齐资料库 →', fn:goLibrary};
+  const review = state.stages.findIndex(s=>s.state === 'review');
+  if(review >= 0) return {label:'继续确认 →', fn:()=>openStage(review)};
+  const failed = state.stages.findIndex(s=>s.state === 'failed');
+  if(failed >= 0) return {label:'处理失败节点 →', fn:()=>openStage(failed)};
+  const pending = state.stages.findIndex(s=>s.state === 'pending');
+  if(pending >= 0) return {label: pending === 0 ? '开始准备' : '继续下一步 →', fn:()=>startStage(pending)};
+  if(state.batch.final_download_url) return {label:'下载最终产物', fn:downloadFinal};
+  return {label:'再跑一批', fn:restartBatch};
+}
+
+function renderTop(){
+  $('topTitle').textContent = state.view === 'library' ? '资料库' : '批次工作台';
+  $('backBtn').hidden = state.view !== 'library';
+  const hasBatch = !!state.batch;
+  $('counter').hidden = !hasBatch;
+  $('progressWrap').hidden = !hasBatch;
+  $('elapsed').hidden = !hasBatch;
+  $('resetBtn').hidden = !hasBatch;
+  $('resetBtn').disabled = !hasBatch || state.batch.running;
+
+  const done = state.stages.filter(s=>s.state === 'done').length;
+  const total = state.stages.length || 7;
+  $('counter').textContent = `${done} / ${total}`;
+  $('progressFill').style.width = `${(done / total) * 100}%`;
+  if(state.batch){
+    $('elapsed').textContent = state.batch.running ? '执行中' : `更新 ${(state.batch.updated_at || '').slice(11,16) || '—'}`;
+  } else {
+    $('elapsed').textContent = '—';
+  }
+
+  const btn = $('actionBtn');
+  const act = primaryAction();
+  if(!act || state.view === 'library'){
+    btn.hidden = true;
+    btn.onclick = null;
+  } else {
+    btn.hidden = false;
+    btn.textContent = act.label;
+    btn.disabled = !!act.disabled;
+    btn.onclick = act.fn;
+  }
+}
+
+function renderSidebar(){
+  $('stageList').innerHTML = state.stages.map((s,i)=>`
+    <li class="stage-item ${i===state.activeIndex?'active':''}" data-state="${s.state}" data-i="${i}"
+        ${s.state==='pending'?'title="需先完成前置节点" aria-disabled="true"':''}>
+      <span class="num">${s.no}</span>
+      <span class="title">${esc(s.title)}<small>${esc(s.sub)}</small></span>
+      <span class="dot"></span>
+      <span class="flag">${s.confirm?'需确认':'自动'}</span>
+    </li>`).join('');
+  $('stageList').querySelectorAll('.stage-item').forEach(el=>{
+    el.onclick = ()=>{
+      const i = Number(el.dataset.i);
+      if(state.stages[i]?.state === 'pending') return;
+      openStage(i);
+    };
+  });
+
+  $('batchName').textContent = state.batch ? state.batch.name : '未载入批次';
+  $('pillRows').textContent = state.batch ? `${state.batch.rows} 行` : '— 行';
+  $('pillLang').textContent = state.project ? `${state.project.src} → ${state.project.tgt}` : 'en → de';
+  $('pillProj').textContent = state.project ? state.project.name : '—';
+  $('projName').textContent = state.project ? state.project.name : '—';
+  $('projLang').textContent = state.project ? `${state.project.src} → ${state.project.tgt}` : 'en → de';
+
+  const total = state.library.length;
+  const ready = state.library.filter(x=>x.ready).length;
+  $('libCnt').textContent = `${ready} / ${total}`;
+  $('libBtn').classList.toggle('active', state.view === 'library');
+  $('libBtn').title = `已就绪 ${ready} / ${total}；必需 ${state.library.filter(x=>x.req && x.ready).length} / ${state.library.filter(x=>x.req).length}`;
+
+  const sel = $('batchSelect');
+  sel.innerHTML = state.batches.map(b => `<option value="${esc(b.id)}">${esc(b.name)} · ${b.done}/${b.total} · ${esc((b.created_at || '').slice(11,16))}</option>`).join('');
+  sel.hidden = !state.batches.length;
+  if(state.batch) sel.value = state.batch.id;
+}
+
+/* ------------------------------------------------------------------ 视图 */
+function render(){
+  renderSidebar();
+  renderTop();
+  if(state.view === 'library'){ renderLibrary(); return; }
+  if(!state.batch){ renderUpload(); return; }
+  if(state.activeIndex < 0 || !state.stages[state.activeIndex]){ renderOverview(); return; }
+  renderPanel(state.activeIndex);
+}
+
+function renderUpload(){
+  const missing = missingRequired();
+  const ready = state.library.filter(x=>x.ready).length;
+  $('view').innerHTML = `
+    <div class="dropzone" id="dropzone">
+      <div class="icon">📄</div>
+      <h3>点击选择或拖入待译文件</h3>
+      <p>支持 XLSX / CSV，需包含 key 与源文列</p>
+      <div class="hint">上传后会从规范化开始逐节点执行；文件、产物和进度都保存在 workspace/pipeline/</div>
+    </div>
+    ${state.project ? `<div class="notice ok" style="margin-top:18px"><span>当前项目：<b>${esc(state.project.name)}</b> · ${state.project.src} → ${state.project.tgt} · 资料库 ${ready} / ${state.library.length}</span></div>` : ''}
+    ${missing.length ? `<div class="notice"><span><b>还缺必需资料：</b>${esc(missing.join('、'))}。补齐后才能开始。</span>
+      <button class="btn" onclick="goLibrary()">去资料库 →</button></div>` : ''}`;
+  bindDropzone();
+}
+
+function bindDropzone(){
+  const zone = $('dropzone');
+  if(!zone) return;
+  zone.onclick = ()=> $('batchFile').click();
+  zone.addEventListener('dragover', event=>{ event.preventDefault(); zone.classList.add('over'); });
+  zone.addEventListener('dragleave', ()=> zone.classList.remove('over'));
+  zone.addEventListener('drop', event=>{
+    event.preventDefault();
+    zone.classList.remove('over');
+    const file = event.dataTransfer.files && event.dataTransfer.files[0];
+    if(file) uploadBatch(file);
+  });
+}
+
+function renderOverview(){
+  const missing = missingRequired();
+  const ready = requiredReady();
+  const total = state.library.filter(x=>x.ready).length;
+  const req = state.library.filter(x=>x.req);
+  const opt = state.library.filter(x=>!x.req);
+  const summary = `资料库 ${total} / ${state.library.length} · 必需 ${req.filter(x=>x.ready).length} / ${req.length} · 选填 ${opt.filter(x=>x.ready).length} / ${opt.length}`;
+  $('view').innerHTML = `
+    <div class="filechip show">
+      <div class="ico">✓</div>
+      <div><div class="nm">${esc(state.batch.name)}</div>
+        <div class="sub">${state.batch.rows} 行 · ${esc(state.project?.name || '')} · ${state.project?.src || 'en'} → ${state.project?.tgt || 'de'}</div></div>
+      <div class="actions"><button class="btn small" onclick="changeBatch()">更换文件</button>
+        <button class="btn small" onclick="goLibrary()">资料库</button></div>
+    </div>
+    <div class="panel" style="margin-top:18px">
+      <div class="desc">批次已载入。自动节点会连续执行，需要判断的节点会停下来等你确认；离开页面不会中断服务端进度。</div>
+      ${ready ? '' : `<div class="notice"><span><b>资料库还缺必需项：</b>${esc(missing.join('、'))}。补齐后才能开始。</span></div>`}
+      ${!state.server.llm_ready ? `<div class="notice"><span><b>模型接口未就绪：</b>术语筛选节点会失败，请检查 config/config.json。</span></div>` : ''}
+      ${!state.server.tm_ready ? `<div class="notice"><span><b>TM 语义模型配置未就绪：</b>请检查 config/config.json 中的 embedding / rerank，非精确匹配需要这两个接口。</span></div>` : ''}
+      ${!state.server.key_rules_ready ? `<div class="notice"><span><b>缺少分类规则：</b>profiles/game/wc_key_rules.json</span></div>` : ''}
+      <div class="panel-foot">
+        ${ready
+          ? `<button class="btn primary" onclick="startRun()">开始准备</button>
+             <button class="btn" onclick="resetBatch()" title="重跑或清空本批次">重置</button>`
+          : `<button class="btn primary" onclick="goLibrary()">去资料库补齐 →</button>`}
+        <span class="note">${summary}</span>
+      </div>
+    </div>`;
+}
+
+function downloadFinal(){
+  const url = state.batch?.final_download_url;
+  if(!url){ toast('最终产物还没有生成'); return; }
+  const name = state.batch.final_name || 'batch_ready.xlsx';
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  downloadNotice(name);
+}
+
+function renderPanel(i){
+  const s = state.stages[i];
+  const st = s.state;
+  const badgeText = {pending:'待处理', running:'执行中', review:'待确认', done:'已确认', failed:'失败'}[st] || st;
+  const hasRun = st !== 'pending';
+  const hasPreview = hasRun && ((s.stats && s.stats.length) || (s.preview && s.preview.type));
+  const isPreflight = s.key === 'preflight';
+  const finalUrl = state.batch?.final_download_url || '';
+  const finalName = state.batch?.final_name || 'batch_ready.xlsx';
+  const finalLink = finalUrl
+    ? `<a class="btn" href="${esc(finalUrl)}" target="_blank" rel="noopener" download data-name="${esc(finalName)}" onclick="downloadNotice(this.dataset.name)">下载最终产物</a>`
+    : '';
+  const reportLink = (isPreflight && s.download_url)
+    ? `<a class="btn small ghost" href="${esc(s.download_url)}" target="_blank" rel="noopener" download title="下载 ${esc(s.artifact)}" data-name="${esc(s.artifact)}" onclick="downloadNotice(this.dataset.name)">自检报告</a>`
+    : '';
+  const download = isPreflight ? (finalLink || (s.download_url
+    ? `<a class="btn" href="${esc(s.download_url)}" target="_blank" rel="noopener" download data-name="${esc(s.artifact)}" onclick="downloadNotice(this.dataset.name)">下载产物</a>`
+    : '')) : (s.download_url
+    ? `<a class="btn" href="${esc(s.download_url)}" target="_blank" rel="noopener" download data-name="${esc(s.artifact)}" onclick="downloadNotice(this.dataset.name)">下载产物</a>`
+    : '');
+  const copyUrl = isPreflight ? finalUrl : s.download_url;
+  const copyLink = copyUrl
+    ? `<button class="btn small ghost" data-url="${esc(copyUrl)}" title="浏览器拦截下载时，复制链接到新标签页打开" onclick="copyDownload(this.dataset.url)">复制链接</button>`
+    : '';
+  const headerDownload = (isPreflight
+    ? `${finalUrl ? `<a class="btn small" href="${esc(finalUrl)}" target="_blank" rel="noopener" download title="下载 ${esc(finalName)}" data-name="${esc(finalName)}" onclick="downloadNotice(this.dataset.name)">下载最终产物</a>` : ''}${reportLink}`
+    : (s.download_url
+      ? `<a class="btn small" href="${esc(s.download_url)}" target="_blank" rel="noopener" download title="下载 ${esc(s.artifact)}" data-name="${esc(s.artifact)}" onclick="downloadNotice(this.dataset.name)">下载产物</a>`
+      : '')) + copyLink;
+
+  $('view').innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div class="no">${s.no}</div>
+        <div><h3>${esc(s.title)}</h3><div class="artifact">产物 · ${esc(s.artifact)}${isPreflight ? ' · 最终交付物 05-TM.xlsx' : ''}</div></div>
+        <div class="right">
+          <span class="badge ${st}">${badgeText}</span>
+          <span class="artifact mono">${(st==='done'||st==='review'||st==='failed') ? (Number(s.seconds)||0).toFixed(1)+'s' : '—'}</span>
+          ${headerDownload}
+        </div>
+      </div>
+      <div class="desc">${esc(s.desc)}</div>
+      ${st==='failed' ? `<div class="notice"><span><b>${esc(s.message || '节点执行失败')}</b></span></div>` : ''}
+      ${hasPreview ? `
+        <div class="stats">${(s.stats || []).map(([k,v,u])=>`
+          <div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}<small>${esc(u || '')}</small></div></div>`).join('')}</div>
+        <div class="preview">${previewHTML(s.preview)}</div>` : (st==='running' ? '' : `
+        <div class="notice ok"><span>${st==='pending' ? '这一步还没有执行。' : '这个节点没有表格预览。'}</span></div>`)}
+      ${(st==='review' && (s.review?.length || s.checks?.length)) ? reviewBox(s.review?.length ? s.review : s.checks) : ''}
+      <div class="panel-foot">${footHTML(i, st, download, reportLink)}</div>
+    </div>`;
+  animateBars();
+}
+
+function reviewBox(checks){
+  return `<div class="reviewbox"><h4>⚠ 确认前看一眼</h4>
+    <ul>${checks.map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`;
+}
+
+function footHTML(i, st, download, report){
+  report = report || '';
+  const s = state.stages[i];
+  const last = i === state.stages.length - 1;
+  if(st === 'pending'){
+    if(!requiredReady()){
+      return `<button class="btn primary" onclick="goLibrary()">去资料库补齐 →</button>
+        <span class="note">补齐术语库与记忆库后才能开始</span>`;
+    }
+    const firstPending = state.stages.findIndex(x=>x.state === 'pending');
+    if(i === firstPending){
+      return `<button class="btn primary" onclick="startStage(${i})">开始本步</button>
+        <span class="note">按顺序执行，需要判断的节点会停下来</span>`;
+    }
+    return `<button class="btn" disabled>等待前置节点</button><span class="note">先完成上一步</span>`;
+  }
+  if(st === 'running'){
+    return `<div class="runbar"><i style="width:${Math.max(2, Number(s.progress) || 0)}%"></i></div>
+      <span class="note">${esc(s.status || '执行中…')}</span>`;
+  }
+  if(st === 'failed'){
+    return `<button class="btn bad" onclick="retryStage(${i},false)">重试本步</button>
+      <button class="btn" onclick="retryStage(${i},true)">重试并继续</button>
+      ${download}${report}<span class="note">前序产物已保留</span>`;
+  }
+  if(st === 'review'){
+    return `<button class="btn primary" onclick="confirmStage(${i})" ${requiredReady()?'':'disabled'}>确认并继续 →</button>
+      <button class="btn" onclick="rerunStage(${i})">重跑本步</button>
+      ${download}${report}<span class="note">${requiredReady()?'这一步需要你判断':'资料库缺少必需项'}</span>`;
+  }
+  if(last){
+    return `<button class="btn primary" disabled>全部完成</button>
+      <button class="btn" onclick="restartBatch()">再跑一批</button>
+      ${download}${report}<span class="note">产物在 workspace/pipeline/</span>`;
+  }
+  return `<button class="btn" onclick="rerunStage(${i})">重跑本步</button>
+    <button class="btn" onclick="nextStage(${i})">下一节点：${esc(state.stages[i+1].title)} →</button>
+    ${download}<span class="note">${s.confirm?'已确认':'自动通过'} · 结果只读</span>`;
+}
+
+function previewHTML(p){
+  if(!p || !p.type) return `<div class="empty">暂无预览</div>`;
+  if(p.type === 'table'){
+    if(!p.rows || !p.rows.length) return `<div class="empty">暂无数据</div>`;
+    return `<div class="cap">${esc(p.cap || '')}</div><div class="scroll"><table class="tbl">
+      <thead><tr>${(p.head || []).map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${p.rows.map(r=>`<tr>${r.map((c,j)=>`<td class="${j===0?'mono':''}">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>`;
+  }
+  if(p.type === 'bars'){
+    const rows = p.rows || [];
+    const max = Math.max(1, ...rows.map(r=>Number(r[1]) || 0));
+    return `<div class="cap">${esc(p.cap || '')}</div><div class="bars">${rows.map(([l,n,c])=>`
+      <div class="bar-row"><span>${esc(l)}</span>
+        <span class="track"><i class="fill" style="background:${esc(c)}" data-w="${(Number(n)||0)/max*100}"></i></span>
+        <span class="n">${esc(n)}</span></div>`).join('')}</div>`;
+  }
+  if(p.type === 'code') return `<div class="cap">${esc(p.cap || '')}</div><div class="cell">${highlight(p.text || '')}</div>`;
+  if(p.type === 'checks'){
+    const rows = p.rows || [];
+    if(!rows.length) return `<div class="empty">暂无断言</div>`;
+    return `<div class="cap">${esc(p.cap || '')}</div><div class="checks">${rows.map(([lv,n,d,level])=>`
+      <div class="check ${lv}"><span class="m">${lv==='ok'?'✓':'!'}</span>
+      <span class="t"><b>${esc(n)}</b><span>${esc(d)}</span></span>
+      <span class="lv">${esc(level)}</span></div>`).join('')}</div>`;
+  }
+  return `<div class="empty">暂无预览</div>`;
+}
+
+function highlight(text){
+  return esc(text)
+    .replace(/\[TM参考 (\d+)｜(.*?)\]/g, '<span class="tag">[TM参考 $1｜$2]</span>')
+    .replace(/【(英|德)】/g, '<span class="lbl">【$1】</span>');
+}
+
+function animateBars(){
+  requestAnimationFrame(()=>{
+    $('view').querySelectorAll('.fill').forEach(el=>{ el.style.width = el.dataset.w + '%'; });
+  });
+}
+
+/* ------------------------------------------------------------------ 资料库 */
+function renderLibrary(){
+  if(!state.project){
+    $('view').innerHTML = `<div class="empty">还没有项目</div>`;
+    return;
+  }
+  const req = state.library.filter(x=>x.req);
+  const opt = state.library.filter(x=>!x.req);
+  const reqDone = req.filter(x=>x.ready).length;
+  const optDone = opt.filter(x=>x.ready).length;
+  const missing = missingRequired();
+  const busy = !!state.batch?.running;
+  const note = busy
+    ? `<div class="notice lib-notice"><span><b>有节点正在执行</b>，资料库暂不可修改；可以先返回工作台查看进度。</span>
+        <button class="btn" onclick="goBatch()">返回工作台 →</button></div>`
+    : (missing.length
+      ? `<div class="notice lib-notice"><span><b>还缺必需资料：</b>${esc(missing.join('、'))}。补齐后才能开始准备。</span></div>`
+      : `<div class="notice ok lib-notice"><span>必需资料已齐，可以返回工作台开始准备。</span>
+          <button class="btn" onclick="goBatch()">返回工作台 →</button></div>`);
+
+  $('view').innerHTML = `
+    <div class="lib-head">
+      <div>
+        <h3>资料库 · ${esc(state.project.name)}</h3>
+        <p>每个项目一套。上传新的会直接替换旧的，不留历史版本；背景、人设和风格会作为术语筛选的参考语境。</p>
+      </div>
+      <div style="margin-left:auto;text-align:right;color:var(--muted);font-size:12.5px">
+        必需 ${reqDone} / ${req.length} · 选填 ${optDone} / ${opt.length}<br>
+        <span style="font-size:11.5px">已就绪 ${reqDone + optDone} / ${state.library.length}</span>
+      </div>
+    </div>
+    ${note}
+    <div class="lib-grid">
+      ${state.library.map(x=>`
+        <div class="lib-card">
+          <div class="top">
+            <span class="ic">${x.icon}</span>
+            <span class="nm">${esc(x.name)}</span>
+            <span class="req ${x.req?'must':''}">${x.req?'必需':'选填'}</span>
+          </div>
+          <div class="ds">${esc(x.desc)}</div>
+          <div class="file ${x.ready?'':'empty'}">${x.ready ? esc(x.file) : '尚未上传'}</div>
+          <div class="row">
+            <span class="st ${x.ready?'ok':'no'}">${x.ready?'已就绪':'缺失'}</span>
+            ${x.meta ? `<span style="font-size:11px;color:var(--muted)">${esc(x.meta)}</span>` : ''}
+            <span class="actions">
+              <button class="btn small" onclick="uploadLib('${x.key}')" ${busy?'disabled':''}>${x.ready?'替换':'上传'}</button>
+              ${x.ready ? `<button class="btn small ghost" onclick="removeLib('${x.key}')" ${busy?'disabled':''}>移除</button>` : ''}
+            </span>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+/* ------------------------------------------------------------------ 动作 */
+function goBatch(){ state.view = 'batch'; render(); }
+function goLibrary(){ state.view = 'library'; render(); }
+
+function openStage(i){
+  if(!state.batch || !state.stages[i]) return;
+  state.follow = false;
+  state.activeIndex = i;
+  state.view = 'batch';
+  render();
+}
+
+async function refresh(){
+  if(!state.project) return;
+  const qs = new URLSearchParams({project: state.project.id});
+  if(state.batch) qs.set('batch', state.batch.id);
+  try {
+    const data = await api('/api/pipeline/bootstrap?' + qs.toString());
+    applyBootstrap(data);
+    render();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    schedulePoll();
+  }
+}
+
+function schedulePoll(){
+  clearTimeout(state.pollTimer);
+  if(!state.batch?.running) return;
+  state.pollTimer = setTimeout(()=>{ refresh(); }, 900);
+}
+
+async function action(path, body){
+  if(!state.batch || state.busy) return;
+  state.busy = true;
+  renderTop();
+  try {
+    await api(`/api/pipeline/projects/${state.project.id}/batches/${state.batch.id}${path}`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body || {})
+    });
+    await refresh();
+  } catch (error) {
+    toast(error.message);
+    log(error.message, 'bad');
+    await refresh();
+  } finally {
+    state.busy = false;
+    renderTop();
+  }
+}
+
+async function startRun(){
+  state.follow = true;
+  log('开始准备…', 'run');
+  await action('/run', {});
+}
+
+async function startStage(i){
+  const s = state.stages[i];
+  if(!s || !state.batch) return;
+  if(s.state !== 'pending'){ openStage(i); return; }
+  state.follow = true;
+  log(`开始 ${s.no} ${s.title}…`, 'run');
+  await action('/run', {stage:s.key});
+}
+
+async function confirmStage(i){
+  state.follow = true;
+  log(`确认 ${state.stages[i].no} ${state.stages[i].title}`, 'ok');
+  await action('/confirm', {});
+}
+
+async function retryStage(i, thenContinue){
+  const s = state.stages[i];
+  if(!s) return;
+  state.follow = true;
+  await action('/run', {stage:s.key, mode:'retry', then_continue:!!thenContinue});
+}
+
+function rerunStage(i){
+  const s = state.stages[i];
+  if(!s) return;
+  openAction({
+    title: `重跑「${s.title}」？`,
+    body: `当前节点：${s.no} ${s.title}`,
+    warning: '重跑本步会覆盖当前产物，并把它下游节点已生成的产物全部作废；前序产物保留。',
+    okLabel: '重跑本步',
+    okClass: 'warn',
+    onOk: () => doRerunStage(i)
+  });
+}
+
+async function doRerunStage(i){
+  closeAction();
+  const s = state.stages[i];
+  if(!s) return;
+  state.follow = true;
+  await action('/run', {stage:s.key, mode:'rerun'});
+}
+
+async function nextStage(i){
+  const next = state.stages[i+1];
+  if(!next) return;
+  if(next.state === 'pending') await startStage(i+1);
+  else openStage(i+1);
+}
+
+function resetBatch(){
+  if(!state.batch) return;
+  if(state.batch.running){ toast('当前批次正在执行，等结束再操作'); return; }
+  const done = state.stages.filter(s=>s.state === 'done').length;
+  openAction({
+    title: '重新准备这批？',
+    body: `当前批次「${state.batch.name}」已完成 ${done} / ${state.stages.length}。`,
+    warning: '「新建批次重跑」会保留当前产物，基于同一源文件新建一个待处理批次；「清空当前批次」会删除 00-05 全部产物，只保留源文件，不可撤销。',
+    okLabel: '新建批次重跑',
+    onOk: cloneBatch,
+    dangerLabel: '清空当前批次',
+    onDanger: resetCurrent
+  });
+}
+
+async function cloneBatch(){
+  closeAction();
+  try {
+    const data = await api(`/api/pipeline/projects/${state.project.id}/batches/${state.batch.id}/clone`, {method:'POST'});
+    applyBootstrap(data, true);
+    state.follow = true;
+    state.activeIndex = -1;
+    state.view = 'batch';
+    render();
+    log('已新建批次（保留原批次产物）', 'ok');
+    toast('已新建批次，点「开始准备」重跑', 'ok');
+  } catch (error) { toast(error.message); }
+}
+
+async function resetCurrent(){
+  closeAction();
+  try {
+    await api(`/api/pipeline/projects/${state.project.id}/batches/${state.batch.id}/reset`, {method:'POST'});
+    await refresh();
+    state.follow = true;
+    state.activeIndex = -1;
+    state.view = 'batch';
+    render();
+    log('已清空当前批次产物', 'warn');
+    toast('已清空，节点回到待处理', 'ok');
+  } catch (error) { toast(error.message); }
+}
+
+function restartBatch(){
+  if(state.batch?.running){ toast('当前批次正在执行，等结束再换文件'); return; }
+  $('batchFile').value = '';
+  $('batchFile').click();
+}
+
+function changeBatch(){ restartBatch(); }
+
+async function uploadBatch(file){
+  if(!state.project) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const data = await api(`/api/pipeline/projects/${state.project.id}/batches`, {method:'POST', body:form});
+    applyBootstrap(data);
+    state.follow = true;
+    state.activeIndex = -1;
+    state.view = 'batch';
+    render();
+    log(`已载入批次 ${data.batch?.name || file.name}`, 'ok');
+    toast('批次已载入', 'ok');
+  } catch (error) {
+    toast(error.message);
+    log(error.message, 'bad');
+  }
+}
+
+function uploadLib(slot){
+  const item = state.library.find(x=>x.key === slot);
+  state.pendingLibSlot = slot;
+  const input = $('libFile');
+  input.accept = item?.accept || '.xlsx,.csv';
+  input.value = '';
+  input.click();
+}
+
+function removeLib(slot){
+  const item = state.library.find(x=>x.key === slot);
+  if(!item) return;
+  openAction({
+    title: `移除「${item.name}」？`,
+    body: '移除后这个槽位会变成缺失；如果是术语库或记忆库，补齐前不能开始准备。',
+    okLabel: '移除',
+    okClass: 'bad',
+    onOk: () => doRemoveLib(slot)
+  });
+}
+
+async function doRemoveLib(slot){
+  closeAction();
+  try {
+    await api(`/api/pipeline/projects/${state.project.id}/library/${slot}`, {method:'DELETE'});
+    await refresh();
+    toast('已移除', 'ok');
+  } catch (error) { toast(error.message); }
+}
+
+function openProject(){
+  renderProjects();
+  $('projMask').classList.add('show');
+}
+function closeProject(){ $('projMask').classList.remove('show'); }
+
+function renderProjects(){
+  $('projectList').innerHTML = state.projects.length
+    ? state.projects.map(p=>`
+      <button class="project-item ${p.active?'active':''}" onclick="activateProject('${esc(p.id)}')">
+        <span><span class="nm">${esc(p.name)}</span><br>
+          <span class="sub">${p.src} → ${p.tgt} · ${p.active?'当前项目':'点击切换'}</span></span>
+        <span class="right">${p.active?'当前':''}</span>
+      </button>`).join('')
+    : `<div class="empty">还没有项目</div>`;
+}
+
+async function createProject(){
+  const name = $('npName').value.trim();
+  if(!name){ toast('请填写项目名称'); return; }
+  try {
+    const data = await api('/api/pipeline/projects', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name, src:$('npSrc').value, tgt:$('npTgt').value})
+    });
+    $('npName').value = '';
+    closeProject();
+    applyBootstrap(data, true);
+    state.view = 'library';
+    render();
+    log(`新建项目：${name}`, 'ok');
+    toast('项目已创建，先上传术语库与记忆库', 'ok');
+  } catch (error) { toast(error.message); }
+}
+
+async function activateProject(projectId){
+  try {
+    const data = await api(`/api/pipeline/projects/${projectId}/activate`, {method:'POST'});
+    closeProject();
+    applyBootstrap(data, true);
+    state.follow = true;
+    state.view = 'batch';
+    render();
+    log(`已切换项目：${state.project?.name || ''}`, '');
+    toast('已切换项目', 'ok');
+  } catch (error) { toast(error.message); }
+}
+
+async function activateBatch(batchId){
+  try {
+    const data = await api(`/api/pipeline/projects/${state.project.id}/batches/${batchId}/activate`, {method:'POST'});
+    applyBootstrap(data, true);
+    state.follow = true;
+    state.view = 'batch';
+    render();
+    log(`已打开批次：${state.batch?.name || ''}`, '');
+  } catch (error) { toast(error.message); }
+}
+
+/* ------------------------------------------------------------------ 绑定 */
+$('libBtn').onclick = goLibrary;
+$('backBtn').onclick = goBatch;
+$('projBtn').onclick = openProject;
+$('resetBtn').onclick = resetBatch;
+$('projMask').onclick = event => { if(event.target === $('projMask')) closeProject(); };
+$('actionMask').onclick = event => { if(event.target === $('actionMask')) closeAction(); };
+$('batchFile').onchange = event => {
+  const file = event.target.files && event.target.files[0];
+  if(file) uploadBatch(file);
+  event.target.value = '';
+};
+$('libFile').onchange = async event => {
+  const file = event.target.files && event.target.files[0];
+  const slot = state.pendingLibSlot;
+  event.target.value = '';
+  state.pendingLibSlot = null;
+  if(!file || !slot) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const data = await api(`/api/pipeline/projects/${state.project.id}/library/${slot}`, {method:'POST', body:form});
+    applyBootstrap(data);
+    render();
+    log(`资料库 · ${slot} 已更新`, 'ok');
+    toast('资料已保存', 'ok');
+  } catch (error) {
+    toast(error.message);
+    log(error.message, 'bad');
+  }
+};
+$('batchSelect').onchange = event => {
+  if(event.target.value) activateBatch(event.target.value);
+};
+document.addEventListener('keydown', event=>{
+  if(event.key !== 'Escape') return;
+  if($('projMask').classList.contains('show')) closeProject();
+  else if($('actionMask').classList.contains('show')) closeAction();
+  else if(state.view === 'library') goBatch();
+});
+
+/* ------------------------------------------------------------------ 启动 */
+(async ()=>{
+  try {
+    const data = await api('/api/pipeline/bootstrap');
+    applyBootstrap(data, true);
+    render();
+    schedulePoll();
+  } catch (error) {
+    toast(error.message);
+    log(error.message, 'bad');
+    $('view').innerHTML = `<div class="empty">无法连接工作台：${esc(error.message)}</div>`;
+  }
+})();
+
+</script>
+</body>
+</html>

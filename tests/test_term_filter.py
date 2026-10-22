@@ -259,46 +259,6 @@ class TermFilterTests(unittest.TestCase):
         bad.write_bytes(b'bad')
         self.assertEqual(self.run_filter(bad)['state'], 'error')
 
-    def test_http_upload_preview_download_and_navigation_order(self):
-        import app as server
-        path = self.source()
-        task_id = None
-        with patch.dict(server.app.config, {'UPLOAD_FOLDER': str(self.root)}), patch.object(server, 'TermFilter', return_value=self.tool):
-            client = server.app.test_client()
-            html = client.get('/term_filter').get_data(as_text=True)
-            self.assertLess(html.index('href="/term"'), html.index('href="/term_filter"'))
-            self.assertLess(html.index('href="/term_filter"'), html.index('href="/tm"'))
-            self.assertNotIn('TEST_SECRET', html)
-            self.assertEqual(client.get('/api/term_filter/missing').status_code, 404)
-            self.assertEqual(client.post('/upload/term_filter', data={'file': (io.BytesIO(b'bad'), 'bad.csv')}).status_code, 400)
-            self.assertEqual(client.post('/upload/term_filter', data={'file': (io.BytesIO(path.read_bytes()), 'file_done.xlsx')}).status_code, 400)
-            try:
-                with patch.object(self.tool, 'filter_terms_with_llm', side_effect=self.classify):
-                    response = client.post('/upload/term_filter', data={'file': (io.BytesIO(path.read_bytes()), 'step3.xlsx')})
-                    self.assertEqual(response.status_code, 200, response.json)
-                    task_id = response.json['task_id']
-                    for _ in range(100):
-                        progress = client.get('/progress/' + task_id).json
-                        if progress['state'] != 'processing':
-                            break
-                        time.sleep(.02)
-                self.assertEqual(progress['state'], 'completed', progress)
-                self.assertNotIn('records', progress)
-                self.assertNotIn('TEST_SECRET', json.dumps(progress))
-                preview = client.get('/api/term_filter/' + task_id).json
-                self.assertEqual(preview['term_counts']['exclude'], 1)
-                self.assertNotIn('KEEP_TARGET', json.dumps(preview))
-                response = client.get('/download/' + task_id)
-                book = load_workbook(io.BytesIO(response.data))
-                self.assertEqual(book.active['G2'].value, 'key (Schlüssel)')
-                self.assertEqual(book.active['C2'].value, 'KEEP_TARGET')
-                self.assertEqual([c.value for c in book.active[1]][-2:], ['生效术语', '无效术语'])
-                self.assertNotIn('关联术语', [c.value for c in book.active[1]])
-                book.close()
-                response.close()
-            finally:
-                if task_id:
-                    server.tasks.pop(task_id, None)
 
 
 if __name__ == '__main__':

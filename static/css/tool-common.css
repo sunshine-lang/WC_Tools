@@ -1,0 +1,20 @@
+#choose-file-btn { font: inherit; width: 100%; }
+#file-name { font-size: 14px; color: var(--text-muted); }
+#file-name.file-name { color: var(--primary-color); }
+.preview-table-wrap { max-height: 420px; overflow: auto; border: 1px solid var(--border-color); border-radius: 8px; }
+[hidden] { display: none !important; }
+.rule-help { font-size: 13px; line-height: 1.7; color: var(--text-muted); margin: 12px 0 0; }
+.tool-filters { display: flex; flex-wrap: wrap; gap: 16px; margin: 16px 0; }
+.tool-filters select { padding: 7px 10px; border: 1px solid var(--border-color); border-radius: 6px; font: inherit; }
+.tool-table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+.tool-table th:first-child { width: 44px; }
+.tool-table th:nth-child(2) { width: 175px; }
+.tool-table th:nth-child(3) { width: 200px; }
+.tool-table th:nth-child(4) { width: 58px; }
+.tool-table td:first-child, .tool-table td:nth-child(4) { white-space: nowrap; }
+.tool-table th, .tool-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-color); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+.tool-table th { background: #f8fafc; }
+.tool-table td:nth-child(3) { min-width: 200px; white-space: pre-wrap; }
+.tool-table td:last-child { min-width: 280px; }
+.tool-table pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
+.tool-table summary { color: var(--primary-color); cursor: pointer; }

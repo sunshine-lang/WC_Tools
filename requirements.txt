@@ -8,11 +8,13 @@ idna==3.19
 itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.3
+numpy==2.2.6
 openpyxl==3.1.2
 Pillow==12.3.0
 python-dateutil==2.9.0.post0
 pytz==2026.3.post1
 requests==2.31.0
+rank-bm25==0.2.2
 six==1.17.0
 tzdata==2026.3
 urllib3==2.7.0

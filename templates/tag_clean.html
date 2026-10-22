@@ -1,8 +1,7 @@
 {% extends "base.html" %}
 {% block title %}标签空格清洗{% endblock %}
 {% block extra_css %}
-<link rel="stylesheet" href="/static/css/key_classifier.css?v=wc-rules-4">
-<link rel="stylesheet" href="/static/css/context.css?v=wc-compact-3">
+<link rel="stylesheet" href="/static/css/tool-common.css?v=1">
 <link rel="stylesheet" href="/static/css/qa.css?v=qa-advanced-2">
 <link rel="stylesheet" href="/static/css/tag_clean.css?v=wc-clean-1">
 {% endblock %}
@@ -41,7 +40,7 @@
             <h3>改动预览</h3>
             <p id="clean-summary"></p>
             <div class="preview-table-wrap">
-                <table class="context-table clean-table">
+                <table class="tool-table clean-table">
                     <thead><tr><th>原位置 / Key</th><th>清洗前</th><th>清洗后</th></tr></thead>
                     <tbody id="clean-rows"></tbody>
                 </table>

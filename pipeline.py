@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""流水线编排：一份待译文件进，五个阶段依次跑，每阶段落一个产物。
+"""流水线编排：一份待译文件进，六个阶段依次跑，每阶段落一个产物。
 
 模块本身不改——每个阶段都是对现有 `process(input, output, task_dict, task_id)`
 的适配。编排层负责：批次目录、产物命名、进度、异常包装、预览统计、清单落盘。
@@ -63,38 +63,38 @@ def workbook_preview(path: Path, sample_rows: int = 3) -> dict:
 
 # ---------------------------------------------------------------- 阶段适配器
 
-def _task() -> tuple[dict, dict]:
+def _task(task: dict | None = None) -> tuple[dict, dict]:
     """模块要求 (task_dict, task_id)，返回容器与容器里的那个任务。"""
-    task = {}
+    task = task if task is not None else {}
     return {'t': task}, task
 
 
-def run_normalize(ctx: dict, source: Path, target: Path) -> dict:
+def run_normalize(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.normalizer import Normalizer
 
     module = Normalizer(speakers=ctx['game'].get('speakers', ()))
-    tasks, task = _task()
+    tasks, task = _task(task)
     module.process(str(source), str(target), tasks, 't')
     return task
 
 
-def run_classify(ctx: dict, source: Path, target: Path) -> dict:
+def run_classify(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.key_classifier import KeyClassifier
 
     rules = ROOT / ctx['game']['key_rules']
     module = KeyClassifier(str(rules))
-    tasks, task = _task()
+    tasks, task = _task(task)
     module.process(str(source), str(target), tasks, 't')
     return task
 
 
-def run_context(ctx: dict, source: Path, target: Path) -> dict:
+def run_context(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.context_processor import ContextProcessor
 
     module = ContextProcessor()
     reference = ctx['game'].get('context', {}).get('reference')
     guide = ctx['game'].get('context', {}).get('guide')
-    tasks, task = _task()
+    tasks, task = _task(task)
     kwargs = {}
     if reference:
         kwargs['reference_path'] = ROOT / reference
@@ -104,31 +104,43 @@ def run_context(ctx: dict, source: Path, target: Path) -> dict:
     return task
 
 
-def run_term(ctx: dict, source: Path, target: Path) -> dict:
+def run_term(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.term_scanner import TermScanner
 
     termbases = ctx['language']['termbases']
     module = TermScanner(str(ROOT / termbases[0]))
-    tasks, task = _task()
+    tasks, task = _task(task)
     module.process(str(source), str(target), tasks, 't')
     return task
 
 
-def run_term_filter(ctx: dict, source: Path, target: Path) -> dict:
+def run_term_filter(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.term_filter import TermFilter
 
     module = TermFilter(materials=ctx.get('materials'))
-    tasks, task = _task()
+    tasks, task = _task(task)
     module.process(str(source), str(target), tasks, 't')
     return task
 
 
-def run_tm(ctx: dict, source: Path, target: Path) -> dict:
+def run_tm(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.tm_matcher import TMMatcher
 
-    module = TMMatcher(str(ROOT / ctx['language']['tms'][0]))
-    tasks, task = _task()
+    module = TMMatcher(str(ROOT / ctx['language']['tms'][0]), semantic=True,
+                       config_path=ctx.get('config_path'), cache_dir=ctx.get('tm_cache_dir'))
+    tasks, task = _task(task)
     module.process(str(source), str(target), tasks, 't')
+    return task
+
+
+def run_preflight(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
+    """可选节点：工作台暂未启用，pipeline_service.PREFLIGHT_ENABLED=True 时使用。"""
+    from core_tools.preflight import process as preflight_process
+
+    tasks, task = _task(task)
+    batch_dir = Path(ctx.get('batch_dir') or target.parent)
+    preflight_process(batch_dir / '00-规范化.xlsx', source, tasks, 't',
+                      batch_name=ctx.get('batch_name') or batch_dir.name)
     return task
 
 
@@ -156,7 +168,7 @@ class Pipeline:
         self.dir.mkdir(parents=True, exist_ok=True)
 
     def context(self) -> dict:
-        return {'game': self.game, 'language': self.language}
+        return {'game': self.game, 'language': self.language, 'batch_dir': str(self.dir)}
 
     def run(self, source: Path, enabled: set[str] | None = None,
             keep_going: bool = False, start_after: str | None = None) -> list[StageResult]:
@@ -183,14 +195,14 @@ class Pipeline:
                     raise RuntimeError(message or '模块返回 error')
                 results.append(StageResult(
                     key, title, 'completed', artifact, round(time.time() - started, 1),
-                    message, workbook_preview(out) if out.exists() else {},
+                    message, workbook_preview(out) if out.suffix.lower() in ('.xlsx', '.xlsm') and out.exists() else {},
                 ))
                 current = out
             except Exception as error:  # noqa: BLE001 — 编排层兜住一切
                 results.append(StageResult(
                     key, title, 'failed', artifact if out.exists() else None,
                     round(time.time() - started, 1), f'{error}',
-                    workbook_preview(out) if out.exists() else {},
+                    workbook_preview(out) if out.suffix.lower() in ('.xlsx', '.xlsm') and out.exists() else {},
                 ))
                 if not keep_going:
                     break

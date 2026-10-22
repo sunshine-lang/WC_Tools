@@ -1,0 +1,22 @@
+{
+  "活动 UI 与商店文案": [
+    "*multiboards*",
+    "offer_*",
+    "album_*",
+    "forestconcert_*",
+    "event_*",
+    "chain_*"
+  ],
+  "集卡名称": [
+    "Ahalloween_set*_name"
+  ],
+  "装饰物名称": [
+    "mdnew_*_decoration_name_*"
+  ],
+  "活动对白": [
+    "mdnew_*_decoration_intro_*",
+    "mdnew_*_decoration_[0-9]*_[0-9]*",
+    "story*",
+    "Fire*"
+  ]
+}

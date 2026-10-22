@@ -1,8 +1,7 @@
 {% extends "base.html" %}
 {% block title %}译后质量检查{% endblock %}
 {% block extra_css %}
-<link rel="stylesheet" href="/static/css/key_classifier.css?v=wc-rules-4">
-<link rel="stylesheet" href="/static/css/context.css?v=wc-compact-3">
+<link rel="stylesheet" href="/static/css/tool-common.css?v=1">
 <link rel="stylesheet" href="/static/css/qa.css?v=qa-advanced-2">
 {% endblock %}
 {% block content %}
@@ -59,12 +58,12 @@
             <h3>问题清单</h3>
             <p id="qa-summary"></p>
             <ul id="qa-file-issues"></ul>
-            <div class="context-filters">
+            <div class="tool-filters">
                 <label>级别 <select id="level-filter"><option value="">全部级别</option><option>错误</option><option>提示</option></select></label>
                 <label>检查项 <select id="check-filter"><option value="">全部检查项</option></select></label>
             </div>
             <div class="preview-table-wrap">
-                <table class="context-table qa-table">
+                <table class="tool-table qa-table">
                     <thead><tr><th>原行号</th><th>Key</th><th>源文</th><th>译文</th><th>问题</th></tr></thead>
                     <tbody id="qa-rows"></tbody>
                 </table>

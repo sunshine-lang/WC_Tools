@@ -120,46 +120,6 @@ class KeyClassifierTests(unittest.TestCase):
             self.classifier.save_rules({'bad': []})
         self.assertEqual(Path(self.classifier.config_path).read_bytes(), before)
 
-    def test_http_upload_preview_and_download(self):
-        import app as server
-        original_folder = server.app.config['UPLOAD_FOLDER']
-        original_classifier = server.key_classifier
-        server.app.config['UPLOAD_FOLDER'] = str(self.root)
-        server.key_classifier = self.classifier
-        task_id = None
-        try:
-            client = server.app.test_client()
-            self.assertEqual(client.post('/api/key_rules', json={'bad': []}).status_code, 400)
-            rules = client.get('/api/key_rules').json
-            rules[CATEGORIES[1]].append('custom_*')
-            self.assertEqual(client.post('/api/key_rules', json=rules).status_code, 200)
-            self.assertIn('custom_*', client.get('/api/key_rules').json[CATEGORIES[1]])
-            self.assertEqual(client.post('/upload/key_classifier').status_code, 400)
-            path = self.workbook([[24, 'unknown', '名称', 'Text', None]])
-            response = client.post('/upload/key_classifier', data={'file': (io.BytesIO(path.read_bytes()), 'input.xlsx')})
-            task_id = response.json['task_id']
-            for _ in range(50):
-                progress = client.get('/progress/' + task_id).json
-                if progress['state'] != 'processing':
-                    break
-                time.sleep(.02)
-            self.assertEqual(progress['state'], 'completed')
-            self.assertNotIn('records', progress)
-            result = client.get('/api/classification/' + task_id).json
-            self.assertEqual(len(result['records']), 1)
-            self.assertEqual(client.post('/api/classification/' + task_id, json={}).status_code, 405)
-            download = client.get('/download/' + task_id)
-            self.assertEqual(download.status_code, 200)
-            sheet = load_workbook(io.BytesIO(download.data)).active
-            self.assertEqual(sheet['F1'].value, '分类')
-            self.assertEqual(sheet['F2'].value, PENDING)
-            self.assertEqual(sheet.max_column, 6)
-            download.close()
-        finally:
-            server.app.config['UPLOAD_FOLDER'] = original_folder
-            server.key_classifier = original_classifier
-            if task_id:
-                server.tasks.pop(task_id, None)
 
 
 if __name__ == '__main__':

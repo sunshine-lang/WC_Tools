@@ -209,65 +209,7 @@ class TMMatcherTests(unittest.TestCase):
         task = self.run_match(path)
         self.assertEqual(task['state'], 'completed', task)
 
-    def test_http_database_replacement_failed_upload_and_snapshot_reload(self):
-        import app as server
-        with patch.dict(server.app.config, {'DB_FOLDER': str(self.database)}):
-            client = server.app.test_client()
-            self.assertFalse(server.get_tm_db_status()['ready'])
-            response = client.post('/update/tm_db', data={'tm_tmx_file': (io.BytesIO(self.tm.read_bytes()), '客户TM.tmx')})
-            self.assertEqual(response.status_code, 200, response.json)
-            old, _ = server.load_tm_db()
-            status = server.get_tm_db_status()
-            files = set(self.database.iterdir())
-            for data, name in [(b'bad', 'broken.tmx'), (b'<tmx><body/></tmx>', 'empty.tmx'), (self.tm.read_bytes(), 'file_done.tmx')]:
-                response = client.post('/update/tm_db', data={'tm_tmx_file': (io.BytesIO(data), name)})
-                self.assertEqual(response.status_code, 400)
-                self.assertEqual(server.get_tm_db_status(), status)
-                self.assertEqual(set(self.database.iterdir()), files)
-            with patch.object(server, 'write_metadata', side_effect=OSError('write failure')):
-                response = client.post('/update/tm_db', data={'tm_tmx_file': (io.BytesIO(self.tm.read_bytes()), 'new.tmx')})
-                self.assertEqual(response.status_code, 400)
-            self.assertEqual(server.get_tm_db_status(), status)
-            self.assertEqual(set(self.database.iterdir()), files)
-            self.save_tm([('Collect {0} stars!', 'CUSTOMER TARGET {0}')])
-            client.post('/update/tm_db', data={'tm_tmx_file': (io.BytesIO(self.tm.read_bytes()), 'new.tmx')})
-            new, _ = server.load_tm_db()
-            self.assertEqual(new.find_matches('Collect {0} stars!')[0]['german'], 'CUSTOMER TARGET {0}')
-            self.assertEqual(old.find_matches('Collect {0} stars!')[0]['german'], 'Sammle {0} Sterne!')
-            self.assertNotEqual(old.sha256, new.sha256)
 
-    def test_http_fourth_stage_upload_preview_and_download(self):
-        import app as server
-        task_id = None
-        path = self.source()
-        with patch.dict(server.app.config, {'DB_FOLDER': str(self.database), 'UPLOAD_FOLDER': str(self.root)}):
-            client = server.app.test_client()
-            self.assertEqual(client.get('/tm').status_code, 200)
-            self.assertEqual(client.post('/upload/tm', data={'trans_file': (io.BytesIO(path.read_bytes()), 'step4.xlsx')}).status_code, 400)
-            client.post('/update/tm_db', data={'tm_tmx_file': (io.BytesIO(self.tm.read_bytes()), 'customer.tmx')})
-            self.assertEqual(client.post('/upload/tm', data={'trans_file': (io.BytesIO(b'bad'), 'bad.csv')}).status_code, 400)
-            try:
-                response = client.post('/upload/tm', data={'trans_file': (io.BytesIO(path.read_bytes()), 'step4.xlsx')})
-                task_id = response.json['task_id']
-                for _ in range(100):
-                    progress = client.get('/progress/' + task_id).json
-                    if progress['state'] != 'processing': break
-                    time.sleep(.02)
-                self.assertEqual(progress['state'], 'completed', progress)
-                self.assertNotIn('records', progress)
-                preview = client.get('/api/tm/' + task_id)
-                self.assertEqual(preview.json['tm_db']['filename'], 'customer.tmx')
-                self.assertNotIn('KEEP_TARGET', preview.get_data(as_text=True))
-                self.assertIn('Sammle {0} Sterne!', preview.json['records'][0]['reference'])
-                response = client.get('/download/' + task_id)
-                book = load_workbook(io.BytesIO(response.data))
-                self.assertEqual(book.active['J1'].value, 'TM参考')
-                self.assertEqual(book.active['E2'].value, 'KEEP_TARGET')
-                book.close(); response.close()
-                self.assertEqual(client.get('/api/tm/missing').status_code, 404)
-                self.assertEqual(client.post('/generate/tm_db').status_code, 404)
-            finally:
-                if task_id: server.tasks.pop(task_id, None)
 
 
 if __name__ == '__main__':

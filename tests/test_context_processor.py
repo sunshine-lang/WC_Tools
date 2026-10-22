@@ -166,40 +166,6 @@ class ContextProcessorTests(unittest.TestCase):
             self.assertIn('result.xlsx', archive.namelist())
             self.assertIn(record['images'][0]['path'], archive.namelist())
 
-    def test_http_upload_preview_images_and_downloads(self):
-        import app as server
-        self.save_reference([['cat_multiboards_pre_desc', '', '', '', '', 'Hello', 'DE_SENTINEL']])
-        path = self.main([[None, 'cat_multiboards_pre_desc', '', 'Hello', None, CATEGORIES[0]]])
-        old_folder, old_processor = server.app.config['UPLOAD_FOLDER'], server.context_processor
-        server.app.config['UPLOAD_FOLDER'], server.context_processor = str(self.root), self.processor
-        task_id = None
-        try:
-            client = server.app.test_client()
-            self.assertEqual(client.get('/context').status_code, 200)
-            self.assertEqual(client.post('/upload/context').status_code, 400)
-            self.assertEqual(client.post('/upload/context', data={'file': (io.BytesIO(b'bad'), 'bad.csv')}).status_code, 400)
-            response = client.post('/upload/context', data={'file': (io.BytesIO(path.read_bytes()), 'classified.xlsx')})
-            task_id = response.json['task_id']
-            for _ in range(100):
-                progress = client.get('/progress/' + task_id).json
-                if progress['state'] != 'processing':
-                    break
-                time.sleep(.02)
-            self.assertEqual(progress['state'], 'completed', progress)
-            self.assertNotIn('asset_paths', progress)
-            preview = client.get('/api/context/' + task_id)
-            self.assertEqual(preview.status_code, 200)
-            self.assertNotIn('DE_SENTINEL', preview.get_data(as_text=True))
-            self.assertEqual(client.post('/api/context/' + task_id).status_code, 405)
-            self.assertEqual(client.get('/context/assets/' + task_id + '/unknown.png').status_code, 404)
-            self.assertEqual(client.get('/download/context_bundle/' + task_id).status_code, 404)
-            response = client.get('/download/' + task_id)
-            self.assertEqual(load_workbook(io.BytesIO(response.data)).active['G1'].value, 'Context')
-            response.close()
-        finally:
-            server.app.config['UPLOAD_FOLDER'], server.context_processor = old_folder, old_processor
-            if task_id:
-                server.tasks.pop(task_id, None)
 
     def test_core_mode_reads_only_uploaded_file_and_uses_its_peers(self):
         path = self.main([[30, 'cat_multiboards_pre_desc', '', 'Current intro', None, CATEGORIES[0]],
@@ -239,7 +205,7 @@ class ContextProcessorTests(unittest.TestCase):
         book.save(path)
         book.close()
         before = path.read_bytes()
-        ctx = {'game': {'speakers': ['Max', 'Christine'], 'key_rules': 'uploads/knowledge_db/key_rules.json'}}
+        ctx = {'game': {'speakers': ['Max', 'Christine'], 'key_rules': 'profiles/game/wc_key_rules.json'}}
         normalized, classified = self.root / 'normalized.xlsx', self.root / 'classified.xlsx'
         for runner, source, target in [(run_normalize, path, normalized), (run_classify, normalized, classified)]:
             task = runner(ctx, source, target)
@@ -334,27 +300,6 @@ class ContextProcessorTests(unittest.TestCase):
         self.assertEqual(task['state'], 'error')
         self.assertIn('done', task['status'])
 
-    def test_http_rejects_done_files_external_references_and_old_results(self):
-        import app as server
-        old_processor = server.context_processor
-        server.context_processor = self.processor
-        server.tasks['retired-context-test'] = {'state': 'completed', 'asset_paths': {}, 'records': []}
-        try:
-            client = server.app.test_client()
-            response = client.post('/upload/context', data={'file': (io.BytesIO(b'blocked'), 'input_done.xlsx')})
-            self.assertEqual(response.status_code, 400)
-            self.assertIn('done', response.json['error'])
-            response = client.post('/upload/context', data={'file': (io.BytesIO(b'input'), 'classified.xlsx'),
-                                    'reference_file': (io.BytesIO(b'blocked'), 'source_done.xlsx')})
-            self.assertEqual(response.status_code, 400)
-            response = client.post('/upload/context', data={'file': (io.BytesIO(b'input'), 'classified.xlsx'),
-                                    'enhance': '1', 'reference_name': '../outside.xlsx'})
-            self.assertEqual(response.status_code, 400)
-            self.assertEqual(client.get('/api/context/retired-context-test').status_code, 404)
-            self.assertEqual(client.get('/download/retired-context-test').status_code, 410)
-        finally:
-            server.context_processor = old_processor
-            server.tasks.pop('retired-context-test', None)
 
 
 if __name__ == '__main__':

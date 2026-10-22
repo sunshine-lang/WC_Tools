@@ -114,7 +114,13 @@ def differences(current, candidate, target):
 
 
 class TMMatcher:
-    def __init__(self, tmx_path, source_name=None):
+    def __init__(self, tmx_path, source_name=None, *, semantic=False, config_path=None, cache_dir=None):
+        # Library validation and offline comparisons stay local; the pipeline
+        # explicitly enables semantic retrieval. A model failure never falls back.
+        self.semantic = semantic
+        self.config_path = config_path
+        self.cache_dir = cache_dir
+        self.retriever = None
         path = Path(tmx_path)
         self.filename = source_name or path.name
         for name in (path.name, path.resolve().name, self.filename):
@@ -188,9 +194,10 @@ class TMMatcher:
                 'tu_count': self.tu_count, 'valid_count': self.valid_count,
                 'source_count': len(self.groups), 'pair_count': sum(len(g['variants']) for g in self.groups),
                 'conflict_count': sum(len(g['variants']) > 1 for g in self.groups),
-                'skipped_count': self.skipped_count, 'method': '英文完全匹配与文字相似匹配'}
+                'skipped_count': self.skipped_count,
+                'method': '精确匹配优先 + 语义向量/BM25召回 + 模型重排' if self.semantic else '英文完全匹配与文字相似匹配'}
 
-    def find_matches(self, text):
+    def _local_selection(self, text):
         if text in self.exact:
             selected = [(self.exact[text], 1.0, '原文一致')]
         elif normalized(text) in self.text_index:
@@ -215,6 +222,9 @@ class TMMatcher:
                     selected.append((index, score, '文字相似'))
             selected.sort(key=lambda item: (-item[1], item[0]))
             selected = selected[:3]
+        return selected
+
+    def _expand_matches(self, text, selected):
         matches = []
         for index, score, kind in selected:
             group = self.groups[index]
@@ -227,6 +237,33 @@ class TMMatcher:
                                 'origins': variant['origins'], 'warnings': warnings,
                                 'changes': changed_fragments(text, group['english'])})
         return matches
+
+    def find_matches(self, text):
+        return self.find_many([text])[text]
+
+    def find_many(self, texts, progress=None):
+        results, pending = {}, []
+        for text in dict.fromkeys(texts):
+            if not self.semantic or text in self.exact or normalized(text) in self.text_index:
+                results[text] = self._expand_matches(text, self._local_selection(text))
+            elif not normalized(text):
+                results[text] = []
+            else:
+                pending.append(text)
+        if pending:
+            source_indices = [i for i, source in enumerate(self.clean) if source.strip()]
+            if not source_indices:
+                results.update((text, []) for text in pending)
+                return results
+            from .tm_semantic import SemanticTMRetriever
+            if self.retriever is None:
+                self.retriever = SemanticTMRetriever(self.config_path, self.cache_dir)
+            queries = list(dict.fromkeys(normalized(text) for text in pending))
+            selected = self.retriever.search_many(queries, [self.clean[i] for i in source_indices], self.sha256, progress)
+            for text in pending:
+                results[text] = self._expand_matches(text, [
+                    (source_indices[i], score, kind) for i, score, kind in selected[normalized(text)]])
+        return results
 
     def format_matches(self, matches):
         chunks = []
@@ -278,32 +315,34 @@ class TMMatcher:
                         continue
                     cell = sheet.cell(row, en_col)
                     english = '' if cell.value is None else str(cell.value)
-                    matches, warning = [], ''
+                    warning = ''
                     if cell.data_type == 'f' or not isinstance(cell.value, str) or not english.strip():
-                        status, warning = '待确认', '英文源文为空、非文本或为公式，请核对源文'
-                    else:
-                        matches = self.find_matches(english)
-                        status = '未命中' if not matches else '原文一致' if any(m['match_type'] == '原文一致' for m in matches) else '相似参考'
-                        if any(m['warnings'] for m in matches):
-                            status, warning = '待确认', '候选有差异或历史译法冲突，请展开核对'
-                    reference = self.format_matches(matches)
-                    if len(reference) > 32767:
-                        raise ValueError(f'{sheet.title} 第{row}行 TM 参考超过单元格上限，未截断，请缩小候选范围')
-                    added = sheet.cell(row, col, reference)
-                    added.data_type = 's'
-                    added.alignment = Alignment(vertical='top', wrap_text=True)
+                        warning = '英文源文为空、非文本或为公式，请核对源文'
                     key, speaker = value(row, 'key'), value(row, 'speaker')
                     emotion = value(row, 'game_text_cn') or value(row, 'cn')
                     if not speaker and emotion.strip().casefold() in EMOTIONS:
                         speaker, key = key, ''
                     records.append({'row': row, 'sheet': sheet.title, 'key': key, 'speaker': speaker,
-                                    'english': english, 'category': value(row, '分类'), 'status': status,
-                                    'warning': warning, 'reference': reference, 'matches': matches})
-                    if len(records) % 20 == 0:
-                        task.update(progress=min(90, 10 + int(75 * row / max(sheet.max_row, 1))),
-                                    status=f'正在匹配，已处理 {len(records)} 条...')
+                                    'english': english, 'category': value(row, '分类'),
+                                    'warning': warning, '_column': col})
             if not records:
                 raise ValueError('未找到待处理记录，须包含英文源文和第四步术语筛选结果列')
+            references = self.find_many([r['english'] for r in records if not r['warning']],
+                                        lambda percent, message: task.update(progress=percent, status=message))
+            for record in records:
+                matches = [] if record['warning'] else references[record['english']]
+                status = '未命中' if not matches else '原文一致' if any(m['match_type'] == '原文一致' for m in matches) else '相似参考'
+                if any(m['warnings'] for m in matches):
+                    record['warning'] = '候选有差异或历史译法冲突，请核对 TM参考 中的提示'
+                if record['warning']:
+                    status = '待确认'
+                reference = self.format_matches(matches)
+                if len(reference) > 32767:
+                    raise ValueError(f"{record['sheet']} 第{record['row']}行 TM 参考超过单元格上限，未截断，请缩小候选范围")
+                added = book[record['sheet']].cell(record['row'], record.pop('_column'), reference)
+                added.data_type = 's'
+                added.alignment = Alignment(vertical='top', wrap_text=True)
+                record.update(status=status, reference=reference, matches=matches)
             # openpyxl reads empty inline strings as None; restore them before round-tripping.
             for sheet in book:
                 for row in sheet:
@@ -315,7 +354,9 @@ class TMMatcher:
             task.update(progress=100, state='completed', records=records,
                         counts={name: counts[name] for name in TM_STATUSES},
                         matched_count=sum(bool(r['matches']) for r in records),
-                        result_file=str(output_path), tm_db=self.status(), tm_policy=TM_POLICY,
+                        result_file=str(output_path), tm_db=self.status(),
+                        tm_policy='wc-en-de-semantic-v1' if self.semantic else TM_POLICY,
+                        retrieval=self.retriever.status() if self.retriever else {'exact_only': self.semantic},
                         status=f'匹配完成，共 {len(records)} 条；有参考 {sum(bool(r["matches"]) for r in records)} 条，待确认 {counts["待确认"]} 条')
         except Exception as error:
             task.update(state='error', status=f'TM 匹配失败：{error}')
