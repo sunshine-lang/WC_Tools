@@ -95,7 +95,8 @@ def run_context(ctx: dict, source: Path, target: Path, task: dict | None = None)
     reference = ctx['game'].get('context', {}).get('reference')
     guide = ctx['game'].get('context', {}).get('guide')
     tasks, task = _task(task)
-    kwargs = {}
+    kwargs = {'analyze_dialogue': True, 'config_path': ctx.get('config_path'), 'materials': ctx.get('materials'),
+              'scene_cache_dir': Path(ctx.get('batch_dir') or target.parent) / 'context_scenes'}
     if reference:
         kwargs['reference_path'] = ROOT / reference
     if guide:

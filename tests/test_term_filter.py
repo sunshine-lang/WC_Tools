@@ -97,6 +97,21 @@ class TermFilterTests(unittest.TestCase):
         self.assertEqual([cell.value for cell in result.active[2]][:7], rows[0][:7])
         result.close()
 
+    def test_full_background_and_separate_character_materials_reach_model(self):
+        materials = {key: f'{key}_START\n' + '完整资料。' * 400 + f'\n{key}_END'
+                     for key in ('world', 'cast', 'relationships', 'style')}
+        tool = TermFilter(self.config, materials=materials)
+        record = dict(english='A key', context='', category='活动对白', key='scene_1',
+                      speaker='Max', emotion='', candidates=['key (Schlüssel)'])
+        response = self.response([{'id': 0, 'decision': 'keep', 'reason': '本句指钥匙'}])
+        with patch('core_tools.term_filter.requests.post', return_value=response) as post:
+            tool.filter_terms_with_llm(record)
+        background = post.call_args.kwargs['json']['messages'][1]['content']
+        for key, label in (('world', '游戏背景'), ('cast', '人物人设'),
+                           ('relationships', '人物关系'), ('style', '风格指南')):
+            self.assertIn(f'[{label}]\n{materials[key]}', background)
+            self.assertIn(f'{key}_END', background)
+
     def test_incomplete_duplicate_invented_and_empty_reason_responses_rejected(self):
         record = dict(english='Hello', context='', category='', key='', speaker='', emotion='', candidates=['Chad (Chad)'])
         for items in [[], [{'id': 2, 'decision': 'keep', 'reason': 'new'}],

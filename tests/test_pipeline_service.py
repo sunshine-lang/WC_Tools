@@ -166,6 +166,10 @@ class PipelineServiceStateTests(unittest.TestCase):
         slots = {item['key']: item for item in data['project']['library']}
         self.assertFalse(slots['termbase']['ready'])
         self.assertFalse(slots['tm']['ready'])
+        self.assertEqual(slots['cast']['name'], '人物人设')
+        self.assertEqual(slots['relationships']['name'], '人物关系')
+        self.assertFalse(slots['cast']['ready'])
+        self.assertFalse(slots['relationships']['ready'])
         self.assertFalse((self.workspace / 'uploads/knowledge_db').exists())
 
     def test_classification_rules_are_available_without_upload_history(self):
@@ -239,6 +243,115 @@ class PipelineServiceStateTests(unittest.TestCase):
         old_ready.write_bytes(b'STALE_READY')
         with self.assertRaisesRegex(pipeline_service.PipelineError, '尚未成功'):
             self.service.final_artifact('p', self.batch['id'])
+
+    def test_context_rerun_removes_old_summary_but_keeps_classification(self):
+        batch = self.service._load_batch('p', self.batch['id'])
+        folder = self.service._batch_dir('p', self.batch['id'])
+        prior = folder / pipeline_service.ARTIFACTS['classify']
+        old_context = folder / pipeline_service.ARTIFACTS['context']
+        prior.write_bytes(b'KEEP_CLASSIFICATION')
+        old_context.write_bytes(b'OLD_SCENE_SUMMARY')
+        self.service._invalidate_after(batch, 'context')
+        self.service._save_batch('p', batch)
+        self.assertEqual(prior.read_bytes(), b'KEEP_CLASSIFICATION')
+        self.assertFalse(old_context.exists())
+        with self.assertRaises(pipeline_service.PipelineError):
+            self.service.artifact_path('p', batch['id'], 'context')
+
+    def test_context_preview_keeps_full_scene_and_both_kinds_of_evidence(self):
+        folder = self.service._batch_dir('p', self.batch['id'])
+        source = folder / 'source.xlsx'
+        scene = {'group': 'forestconcert/dialogue/3',
+                 'context': '【场景结构】\n' + '完整场景。' * 200 + '\n\n【情境与基调】\n可核对的语气说明。',
+                 'sources': [{'key': 'scene_1', 'english': 'Hello', 'speaker': 'Max', 'emotion': '', 'bubble_type': ''}],
+                 'references': [], 'evidence': [{'key': 'scene_1', 'quote': 'Hello'}],
+                 'materials': [{'key': 'cast', 'label': '人物人设'}],
+                 'material_evidence': [{'material': 'cast', 'quote': '人物资料。'}], 'warnings': []}
+        summary = self.service._summarize('context', 'p', self.batch, 'context',
+                                         {'dialogue_scenes': [scene]}, source, source, 1)
+        self.assertEqual(summary['preview']['type'], 'dialogue_context')
+        self.assertEqual(summary['preview']['scenes'][0], scene)
+        self.assertTrue(any('人物人设' in c for c in summary['checks']))
+
+    def test_context_retry_keeps_cache_but_explicit_rerun_clears_it(self):
+        batch = self.service._load_batch('p', self.batch['id'])
+        folder = self.service._batch_dir('p', self.batch['id'])
+        shutil.copyfile(folder / 'source.xlsx', folder / pipeline_service.ARTIFACTS['classify'])
+        for key in ('normalize', 'classify'):
+            batch['stages'][key]['state'] = 'done'
+        batch['stages']['context']['state'] = 'failed'
+        self.service._save_batch('p', batch)
+        cache = folder / 'context_scenes'
+        cache.mkdir()
+        saved = cache / 'scene.json'
+        saved.write_text('{}')
+        self.service.start('p', batch['id'], stage='context', mode='retry')
+        self.wait()
+        self.assertTrue(saved.exists())
+        self.service.start('p', batch['id'], stage='context', mode='rerun')
+        self.wait()
+        self.assertFalse(cache.exists())
+
+    def test_legacy_combined_cast_is_preserved_and_migration_is_idempotent(self):
+        old_file = self.workspace / '旧合并资料.md'
+        old_file.write_text('# 原合并人物资料\n保持完整内容。', encoding='utf-8')
+        store = self.service._read_store()
+        store['version'] = 1
+        library = store['projects']['p']['library']
+        old_item = {'path': str(old_file), 'name': old_file.name, 'meta': '2 行'}
+        library['cast'] = dict(old_item)
+        library.pop('relationships', None)
+        self.service._write_store(store)
+        migrated = PipelineService(workspace=self.workspace)
+        after = migrated._read_store()
+        self.assertEqual(after['version'], pipeline_service.STORE_VERSION)
+        self.assertEqual(after['projects']['p']['library']['cast'], old_item | {'legacy_combined': True})
+        self.assertIsNone(after['projects']['p']['library']['relationships'])
+        self.assertEqual(old_file.read_text(), '# 原合并人物资料\n保持完整内容。')
+        slots = {item['key']: item for item in migrated.bootstrap('p')['project']['library']}
+        self.assertIn('合并文件', slots['cast']['notice'])
+        self.assertFalse(slots['relationships']['ready'])
+        before_reload = migrated.projects_file.read_bytes()
+        PipelineService(workspace=self.workspace)
+        self.assertEqual(migrated.projects_file.read_bytes(), before_reload)
+        replacement = self.workspace / '新人物人设.md'
+        replacement.write_text('角色的新人物人设。', encoding='utf-8')
+        data = migrated.upload_library('p', 'cast', Upload(replacement))
+        self.assertFalse(next(x for x in data['project']['library'] if x['key'] == 'cast')['notice'])
+        self.assertTrue(old_file.exists())
+
+    def test_character_uploads_are_independent_persisted_and_reach_pipeline(self):
+        import io
+        import app as server
+        import pipeline_api
+        profiles = '# 人物人设\n' + '完整人设内容。' * 300 + '人物人设末尾'
+        relationships = '# 人物关系\n' + '完整关系内容。' * 300 + '人物关系末尾'
+        with patch.object(pipeline_api, 'service', self.service):
+            client = server.app.test_client()
+            for slot, name, content in (('cast', '人物人设.md', profiles),
+                                        ('relationships', '人物关系.txt', relationships)):
+                response = client.post(f'/api/pipeline/projects/p/library/{slot}',
+                                       data={'file': (io.BytesIO(content.encode()), name)})
+                self.assertEqual(response.status_code, 200, response.json)
+            slots = {item['key']: item for item in response.json['project']['library']}
+            self.assertEqual(slots['cast']['file'], '人物人设.md')
+            self.assertEqual(slots['relationships']['file'], '人物关系.txt')
+            reloaded = PipelineService(workspace=self.workspace)
+            project = reloaded._read_store()['projects']['p']
+            materials = reloaded._ctx(project, self.batch)['materials']
+            self.assertEqual(materials['cast'], profiles)
+            self.assertEqual(materials['relationships'], relationships)
+            before = self.service.projects_file.read_bytes()
+            invalid = client.post('/api/pipeline/projects/p/library/relationships',
+                                  data={'file': (io.BytesIO(b'\xff'), 'broken.txt')})
+            self.assertEqual(invalid.status_code, 400)
+            self.assertEqual(self.service.projects_file.read_bytes(), before)
+            removed = client.delete('/api/pipeline/projects/p/library/relationships')
+            self.assertEqual(removed.status_code, 200, removed.json)
+            slots = {item['key']: item for item in removed.json['project']['library']}
+            self.assertTrue(slots['cast']['ready'])
+            self.assertFalse(slots['relationships']['ready'])
+            self.assertEqual(self.service._materials(self.service._read_store()['projects']['p'])['cast'], profiles)
 
 
 if __name__ == '__main__':

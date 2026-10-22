@@ -10,6 +10,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from .key_classifier import CATEGORIES, EMOTIONS, PENDING, KeyClassifier
+from .dialogue_context import DIALOGUE_CONTEXT_POLICY, DialogueContextAnalyzer
 
 
 MATERIAL_DIR = Path(__file__).resolve().parents[2]
@@ -102,11 +103,16 @@ class ContextProcessor:
                     if key:
                         note = ''
                 key, speaker = dialogue_identity(key, speaker, note)
+                if not emotion and chinese.strip().casefold() in EMOTIONS and speaker:
+                    emotion = chinese.strip()
+                bubble = value(row, 'bubbletype', 'bubble_type').strip()
+                if re.fullmatch(r'\d+\.0+', bubble):
+                    bubble = bubble.split('.')[0]
                 records.append({
                     'id': f'{sheet.title}:{row}', 'sheet': sheet.title, 'row': row, 'width': width,
                     'source': f'{source_name} / {sheet.title}!{row}', 'key': key,
                     'english': english, 'speaker': speaker, 'emotion': emotion,
-                    'bubble': value(row, 'bubbletype').strip(), 'chinese': chinese,
+                    'bubble': bubble, 'chinese': chinese,
                     'note': note.strip(), 'category': value(row, '分类').strip(),
                     'formula': sheet.cell(row, en_col).data_type == 'f',
                 })
@@ -365,9 +371,11 @@ class ContextProcessor:
             lines.append('[配图] ' + '、'.join(dict.fromkeys(im['path'] for im in selected_images)))
         effective['warning'] = '；'.join(dict.fromkeys(warnings))
         effective['related_count'] = len(selected) if useful else 0
+        effective['related_records'] = selected
         return status, '\n'.join(lines), selected_images, effective
 
-    def process(self, input_file, output_file, task_dict, task_id, reference_path=None, guide_path=None, enhance=False):
+    def process(self, input_file, output_file, task_dict, task_id, reference_path=None, guide_path=None, enhance=False,
+                analyze_dialogue=False, config_path=None, materials=None, scene_cache_dir=None):
         task = task_dict[task_id]
         workbook = reference_workbook = None
         try:
@@ -433,6 +441,8 @@ class ContextProcessor:
             task.update(progress=30, status='正在按活动、套组和对白段关联...')
             result = []
             context_columns = {}
+            scene_results, blocked_scenes = {}, {}
+            analyzer = None
             for record in records:
                 sheet = workbook[record['sheet']]
                 if sheet.title not in context_columns:
@@ -445,6 +455,41 @@ class ContextProcessor:
                 effective, status, warning = matches[record['id']]
                 status, context, selected, effective = self.build_context(record, effective, status, warning,
                                                                         groups, activities, roles, images, enhanced=enhance)
+                group = effective.get('group', '')
+                if analyze_dialogue and record['category'] == CATEGORIES[3] and group and status != '待确认':
+                    if group not in scene_results and group not in blocked_scenes:
+                        peers = sorted((r for r in effective_records if r['group'] == group), key=lambda r: r['order'])
+                        if any(r['formula'] or not r['english'].strip() or r['category'] != CATEGORIES[3]
+                               or matches[r['id']][1] == '待确认' for r in peers):
+                            blocked_scenes[group] = '同段存在异常源文、分类或版本冲突，场景分析留空，请核对后重跑'
+                        elif len({r['key'].casefold() for r in peers}) != len(peers) or len({r['order'] for r in peers}) != len(peers):
+                            blocked_scenes[group] = '同段完整 Key 重复，无法确定对白顺序，场景分析留空'
+                        else:
+                            if analyzer is None:
+                                analyzer = DialogueContextAnalyzer(config_path, materials=materials, cache_dir=scene_cache_dir)
+                            input_warnings = []
+                            if any(not r['bubble'] for r in peers):
+                                input_warnings.append('本组存在未提供气泡类型的台词，交流媒介或内心独白只能依据明确原文判断')
+                            orders = [r['order'] for r in peers]
+                            if orders[0] > 1 or any(b - a != 1 for a, b in zip(orders, orders[1:])):
+                                input_warnings.append('本批对白句序存在缺号，仅分析已提供原文，不补写缺句')
+                            references = [r for r in effective.get('related_records', []) if r['group'] != group]
+                            task['status'] = f'正在通读对白场景 {group}（{len(peers)} 句）...'
+                            try:
+                                scene_results[group] = analyzer.analyze(group, peers, references, input_warnings)
+                                task['dialogue_scenes'] = list(scene_results.values())
+                            except ValueError as error:
+                                raise ValueError(f'对白场景 {group}：{error}') from error
+                    if group in blocked_scenes:
+                        status, context = '待确认', ''
+                        effective['warning'] = blocked_scenes[group]
+                    else:
+                        scene = scene_results[group]
+                        context = scene['context']
+                        prior_warning = effective.get('warning', '').replace('未找到可用关联原文，Context 留空', '').strip('；')
+                        effective['warning'] = '；'.join(filter(None, [prior_warning, *scene['warnings']]))
+                        effective['related_count'] = len(scene['sources']) + len(scene['references'])
+                        status = '缺资料' if effective['warning'] else '已关联'
                 if len(context) > 32767:
                     raise ValueError(f'{sheet.title} 第{record["row"]}行 Context 超过 Excel 单元格上限，请缩小关联范围')
                 cell = sheet.cell(record['row'], context_columns[sheet.title], context)
@@ -474,7 +519,10 @@ class ContextProcessor:
                         bundle_file=bundle_file, image_warnings=image_warnings,
                         asset_paths={im['name']: str(asset_dir / im['name']) for im in images},
                         reference_name=task.get('reference_name', reference_path.name) if enhance else '未启用可选补充',
-                        enhanced=enhance, context_policy=CONTEXT_POLICY)
+                        enhanced=enhance, context_policy=DIALOGUE_CONTEXT_POLICY if analyze_dialogue else CONTEXT_POLICY,
+                        dialogue_scenes=list(scene_results.values()),
+                        dialogue_cached_scenes=sum(s.get('cache_hit', False) for s in scene_results.values()),
+                        dialogue_model_requests=sum(not s.get('cache_hit', False) for s in scene_results.values()))
         except Exception as error:
             task.update(status=f'关联失败：{error}', state='error')
         finally:

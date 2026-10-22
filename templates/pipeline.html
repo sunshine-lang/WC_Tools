@@ -125,6 +125,9 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .stat .v small{font-size:12px; font-weight:400; color:var(--muted); margin-left:3px}
 .preview{padding:0 22px 20px}
 .preview .cap{font-size:12px; color:var(--muted); margin-bottom:8px}
+.scene-preview{border-top:1px solid var(--line); padding:14px 0}
+.scene-preview summary{cursor:pointer; font-size:13px; padding:6px 0; overflow-wrap:anywhere}
+.scene-preview .cell{margin:8px 0 12px; overflow-wrap:anywhere}
 .tbl{width:100%; border-collapse:collapse; font-size:12.5px}
 .tbl th{text-align:left; font-weight:600; color:var(--muted); background:#f8fafc; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap}
 .tbl td{padding:8px 10px; border-bottom:1px solid #f1f5f9; vertical-align:top}
@@ -485,7 +488,7 @@ function applyBootstrap(data, initial=false){
   if(initial){
     log('工作台就绪', '');
     if(state.batch) log(`批次 ${state.batch.name} · ${state.batch.rows} 行`, '');
-    if(!state.server.llm_ready) log('模型接口未就绪：术语筛选节点会失败，请检查 config/config.json', 'warn');
+    if(!state.server.llm_ready) log('模型接口未就绪：对白场景分析与术语筛选会失败，请检查 config/config.json', 'warn');
     if(!state.server.tm_ready) log('TM 语义模型配置未就绪：请检查 config/config.json 中的 embedding / rerank', 'warn');
     if(!state.server.key_rules_ready) log('缺少分类规则 profiles/game/wc_key_rules.json', 'warn');
   }
@@ -669,7 +672,7 @@ function renderOverview(){
     <div class="panel" style="margin-top:18px">
       <div class="desc">批次已载入。自动节点会连续执行，需要判断的节点会停下来等你确认；离开页面不会中断服务端进度。</div>
       ${ready ? '' : `<div class="notice"><span><b>资料库还缺必需项：</b>${esc(missing.join('、'))}。补齐后才能开始。</span></div>`}
-      ${!state.server.llm_ready ? `<div class="notice"><span><b>模型接口未就绪：</b>术语筛选节点会失败，请检查 config/config.json。</span></div>` : ''}
+      ${!state.server.llm_ready ? `<div class="notice"><span><b>模型接口未就绪：</b>对白场景分析与术语筛选会失败，请检查 config/config.json。</span></div>` : ''}
       ${!state.server.tm_ready ? `<div class="notice"><span><b>TM 语义模型配置未就绪：</b>请检查 config/config.json 中的 embedding / rerank，非精确匹配需要这两个接口。</span></div>` : ''}
       ${!state.server.key_rules_ready ? `<div class="notice"><span><b>缺少分类规则：</b>profiles/game/wc_key_rules.json</span></div>` : ''}
       <div class="panel-foot">
@@ -796,6 +799,20 @@ function footHTML(i, st, download, report){
 
 function previewHTML(p){
   if(!p || !p.type) return `<div class="empty">暂无预览</div>`;
+  if(p.type === 'dialogue_context'){
+    return `<div class="cap">${esc(p.cap || '')}</div>${(p.scenes || []).map((scene, i)=>`
+      <details class="scene-preview" ${i===0?'open':''}>
+        <summary>${esc(scene.group)} · ${(scene.sources || []).length} 句</summary>
+        <div class="cell">${esc(scene.context)}</div>
+        ${(scene.warnings || []).length ? `<div class="notice"><span>${scene.warnings.map(esc).join('<br>')}</span></div>` : ''}
+        <details><summary>核对同段原文与判断依据</summary>
+          <div class="cell">${esc((scene.sources || []).map(r=>`${r.key} · ${r.speaker || '说话人未提供'}${r.emotion?' · '+r.emotion:''}${r.bubble_type?' · 气泡 '+r.bubble_type:''}\n${r.english}`).join('\n\n'))}</div>
+          ${(scene.references || []).length ? `<div class="cap">关联名称或跨段线索（不属于本段句序）</div><div class="cell">${esc(scene.references.map(r=>`${r.kind} · ${r.key}\n${r.english}`).join('\n\n'))}</div>` : ''}
+          <div class="cap">模型引用的原文依据</div><div class="cell">${esc((scene.evidence || []).map(r=>`${r.key}\n${r.quote}`).join('\n\n'))}</div>
+          ${(scene.material_evidence || []).length ? `<div class="cap">模型引用的人物与背景资料</div><div class="cell">${esc(scene.material_evidence.map(r=>`${(scene.materials || []).find(m=>m.key===r.material)?.label || r.material}\n${r.quote}`).join('\n\n'))}</div>` : ''}
+        </details>
+      </details>`).join('')}`;
+  }
   if(p.type === 'table'){
     if(!p.rows || !p.rows.length) return `<div class="empty">暂无数据</div>`;
     return `<div class="cap">${esc(p.cap || '')}</div><div class="scroll"><table class="tbl">
@@ -859,7 +876,7 @@ function renderLibrary(){
     <div class="lib-head">
       <div>
         <h3>资料库 · ${esc(state.project.name)}</h3>
-        <p>每个项目一套。上传新的会直接替换旧的，不留历史版本；背景、人设和风格会作为术语筛选的参考语境。</p>
+        <p>每个项目一套，各项资料单独上传和替换。人物人设与人物关系分开维护；背景、人设、关系和风格全文作为术语筛选的参考语境。</p>
       </div>
       <div style="margin-left:auto;text-align:right;color:var(--muted);font-size:12.5px">
         必需 ${reqDone} / ${req.length} · 选填 ${optDone} / ${opt.length}<br>
@@ -876,6 +893,7 @@ function renderLibrary(){
             <span class="req ${x.req?'must':''}">${x.req?'必需':'选填'}</span>
           </div>
           <div class="ds">${esc(x.desc)}</div>
+          ${x.notice ? `<div class="ds" style="color:#b45309">${esc(x.notice)}</div>` : ''}
           <div class="file ${x.ready?'':'empty'}">${x.ready ? esc(x.file) : '尚未上传'}</div>
           <div class="row">
             <span class="st ${x.ready?'ok':'no'}">${x.ready?'已就绪':'缺失'}</span>

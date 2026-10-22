@@ -41,15 +41,17 @@ from pipeline import (
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_WORKSPACE = ROOT / 'workspace' / 'pipeline'
-STORE_VERSION = 1
+STORE_VERSION = 2
 
 SLOTS = (
     {'key': 'termbase', 'name': '术语库', 'req': True, 'icon': '📗', 'accept': '.xlsx,.csv',
      'desc': '源语言 ↔ 目标语言的词条对照，按词边界匹配。'},
     {'key': 'tm', 'name': '记忆库', 'req': True, 'icon': '🗂', 'accept': '.tmx',
      'desc': '历史源文与译文，TMX 格式，用于找相同或相近的句子。'},
-    {'key': 'cast', 'name': '人设 / 关系', 'req': False, 'icon': '👥', 'accept': '.md,.txt',
-     'desc': '角色简介与人物关系；术语筛选时作为语境参考。'},
+    {'key': 'cast', 'name': '人物人设', 'req': False, 'icon': '👤', 'accept': '.md,.txt',
+     'desc': '角色身份、性格与表达习惯，全文作为术语筛选的参考语境。'},
+    {'key': 'relationships', 'name': '人物关系', 'req': False, 'icon': '👥', 'accept': '.md,.txt',
+     'desc': '人物间的关系、称呼与适用剧情阶段，单独上传和维护。'},
     {'key': 'world', 'name': '游戏背景', 'req': False, 'icon': '🌍', 'accept': '.md,.txt',
      'desc': '世界观、剧情梗概；术语筛选时作为语境参考。'},
     {'key': 'style', 'name': '风格指南', 'req': False, 'icon': '✒️', 'accept': '.md,.txt',
@@ -72,15 +74,15 @@ STAGES = (
     {'key': 'classify', 'no': '01', 'title': '分类', 'sub': '决定下游用哪套提示词',
      'artifact': '01-分类.xlsx', 'confirm': False,
      'desc': '按项目规则给每一行打文本类型。它同时决定下游选哪套提示词，以及长度校验对哪些行生效。'},
-    {'key': 'context', 'no': '02', 'title': '上下文', 'sub': '把同族条目找出来',
+    {'key': 'context', 'no': '02', 'title': '上下文', 'sub': '关联原文，通读对白情景',
      'artifact': '02-上下文.xlsx', 'confirm': True,
-     'desc': 'UI 文案按 key 词形归族，关联同组标题与描述。对白从 key 或 note 读取完整 Key，按活动和段号分组、句号排序；缺少完整 Key 时留空待确认。'},
+     'desc': 'UI、集卡和装饰物关联原文。活动对白按完整 Key 分组、句序排序，结合资料库的人物人设、人物关系与同段英文，生成「场景结构＋情境与基调」，同组共用一份；两类原文依据可展开核对。'},
     {'key': 'term', 'no': '03', 'title': '术语', 'sub': '词边界匹配，长词优先',
      'artifact': '03-术语.xlsx', 'confirm': False,
      'desc': '英语源用词边界匹配，大小写不敏感，长词优先并剔除已命中片段，避免「key」命中「keyboard」。候选全部保留，不做取舍。'},
     {'key': 'term_filter', 'no': '04', 'title': '术语筛选', 'sub': '结合语境判真假',
      'artifact': '04-术语筛选.xlsx', 'confirm': True,
-     'desc': '把候选词放回句子里，让模型判断它是否真的生效。项目资料库里的背景、人设与风格指南会作为参考语境一起送给模型。'},
+     'desc': '把候选词放回句子里，让模型判断它是否真的生效。项目资料库里的背景、人物人设、人物关系与风格指南会全文作为参考语境送给模型。'},
     {'key': 'tm', 'no': '05', 'title': 'TM 参考', 'sub': '精确优先，语义召回与重排',
      'artifact': '05-TM.xlsx', 'confirm': True,
      'desc': '原文一致优先；其余通过语义向量和关键词召回，再由模型重排。默认召回 30 条、最多选 5 条历史原文，保留不同译法和差异提示。首次运行会生成并缓存记忆库向量。'},
@@ -203,6 +205,15 @@ class PipelineService:
     def _ensure_store(self):
         with self.lock:
             if self.projects_file.is_file():
+                store = self._read_store()
+                if store.get('version', 1) == 1:
+                    for project in store['projects'].values():
+                        library = project.setdefault('library', {})
+                        if library.get('cast'):
+                            library['cast']['legacy_combined'] = True
+                        library.setdefault('relationships', None)
+                    store['version'] = STORE_VERSION
+                    self._write_store(store)
                 return
             write_json(self.projects_file, self._default_store())
 
@@ -213,6 +224,7 @@ class PipelineService:
             'termbase': None,
             'tm': None,
             'cast': None,
+            'relationships': None,
             'world': self._text_item(world) if world.is_file() else None,
             'style': self._text_item(style) if style.is_file() else None,
         }
@@ -322,6 +334,8 @@ class PipelineService:
             ready = bool(path and path.is_file())
             library.append({**slot, 'file': item.get('name', '') if ready else '',
                             'meta': item.get('meta', '') if ready else '',
+                            'notice': ('已保留原“人设 / 关系”合并文件，请分别上传人物人设和人物关系。'
+                                       if ready and item.get('legacy_combined') else ''),
                             'ready': ready, 'updated_at': item.get('updated_at', '')})
         return {'id': project['id'], 'name': project['name'], 'src': project['src'],
                 'tgt': project['tgt'], 'game': project.get('game', 'wc'),
@@ -408,8 +422,8 @@ class PipelineService:
         slot_def = next(item for item in SLOTS if item['key'] == slot)
         if suffix not in {part.strip() for part in slot_def['accept'].split(',')}:
             raise PipelineError(f'该槽位只支持 {slot_def["accept"]}')
-        if slot in ('cast', 'world', 'style') and suffix not in TEXT_SUFFIXES:
-            raise PipelineError('人设 / 背景 / 风格资料只支持 .md 或 .txt')
+        if slot in ('cast', 'relationships', 'world', 'style') and suffix not in TEXT_SUFFIXES:
+            raise PipelineError('人物人设 / 人物关系 / 背景 / 风格资料只支持 .md 或 .txt')
 
         with self.lock:
             store = self._read_store()
@@ -705,7 +719,7 @@ class PipelineService:
 
     def _materials(self, project: dict) -> dict:
         result = {}
-        for key in ('world', 'cast', 'style'):
+        for key in ('world', 'cast', 'relationships', 'style'):
             item = (project.get('library') or {}).get(key) or {}
             path = self._resolve(item.get('path'))
             if path and path.is_file():
@@ -777,6 +791,10 @@ class PipelineService:
                     raise PipelineError('缺少要重跑的节点')
                 if stage not in STAGE_BY_KEY:
                     raise PipelineError('未知节点')
+                if stage == 'context':
+                    cache = self._batch_dir(project['id'], batch_id) / 'context_scenes'
+                    if cache.exists():
+                        shutil.rmtree(cache)
                 self._invalidate_after(batch, stage)
                 start_key = stage
                 chain = False
@@ -882,8 +900,8 @@ class PipelineService:
             batch['stages'][key] = {'state': 'pending', 'progress': 0, 'status': ''}
             (folder / ARTIFACTS[key]).unlink(missing_ok=True)
         batch['stages'][stage] = {'state': 'pending', 'progress': 0, 'status': ''}
-        if stage == 'tm':
-            # Never expose an old ready file as a successful semantic rerun.
+        if stage in ('context', 'tm'):
+            # Model reruns must not expose the previous output after a failure.
             (folder / ARTIFACTS[stage]).unlink(missing_ok=True)
 
     def _worker(self, project_id: str, batch_id: str, start_key: str,
@@ -1020,21 +1038,27 @@ class PipelineService:
             with_context = [row for row in rows if text(column(row, 'context')).strip()]
             dialogue = [row for row in rows if text(column(row, '分类')).strip() == '活动对白']
             empty_dialogue = sum(1 for row in dialogue if not text(column(row, 'context')).strip())
-            cluster = 0
-            for row in with_context:
-                cluster = max(cluster, max(0, len([line for line in text(column(row, 'context')).splitlines()
-                                                   if line.strip()]) - 1))
+            scenes = task.get('dialogue_scenes', [])
+            cluster = max((r.get('related_count', 0) for r in task.get('records', [])), default=0)
             stats = [['有 Context', len(with_context), ' 行'], ['无 Context', total - len(with_context), ' 行'],
-                     ['活动对白', len(dialogue), ' 行'], ['最大簇', cluster, ' 条']]
+                     ['活动对白', len(dialogue), ' 行'], ['场景分析', len(scenes), ' 组']]
             sample = next((row for row in with_context), None)
             if sample:
                 preview_text = f"{text(column(sample, 'key'))}\n{text(column(sample, 'context'))[:900]}"
             else:
                 preview_text = '这一批没有生成 Context。'
-            checks = [f'最大簇 {cluster} 条，请核对是否跨活动或跨段误关联',
+            checks = [f'最大关联组 {cluster} 条，请核对是否跨活动或跨段误关联',
                       f'对白 {len(dialogue) - empty_dialogue} 条有 Context，{empty_dialogue} 条为空；空值需核对完整 Key 和同段原文',
-                      '抽 3 行核对关联原文；对白按完整 Key 的段号和句号核对']
-            return {'stats': stats, 'preview': {'type': 'code', 'cap': '一条 Context 样例', 'text': preview_text},
+                      '对白 Context 是模型场景判断，请展开对白和人物资料依据核对语气、指代及叙事方式']
+            if scenes:
+                labels = [m['label'] for m in scenes[0].get('materials', [])]
+                checks.append('本次全文读取资料：' + ('、'.join(labels) if labels else '未提供人物或背景资料'))
+            preview = ({'type': 'dialogue_context', 'cap': '对白场景与原文依据', 'scenes': scenes}
+                       if scenes else {'type': 'code', 'cap': '一条 Context 样例', 'text': preview_text})
+            notices = [f"{r['sheet']} 第{r['row']}行：{r['warning']}" for r in task.get('records', [])
+                       if r['category'] == '活动对白' and r.get('status') == '待确认']
+            checks.extend(notices[:5])
+            return {'stats': stats, 'preview': preview,
                     'checks': checks, 'review': checks}
         if key == 'term':
             hit = [row for row in rows if text(column(row, '关联术语')).strip()]

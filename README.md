@@ -31,16 +31,40 @@
 |---|---|---|---|
 | 00 | 规范化 | `core_tools/normalizer.py` | 自动 |
 | 01 | 分类 | `core_tools/key_classifier.py` | 自动 |
-| 02 | 上下文 | `core_tools/context_processor.py` | 需确认 |
+| 02 | 上下文 | `core_tools/context_processor.py` + `core_tools/dialogue_context.py`（活动对白 LLM） | 需确认 |
 | 03 | 术语 | `core_tools/term_scanner.py` | 自动 |
 | 04 | 术语筛选 | `core_tools/term_filter.py`（LLM） | 需确认 |
 | 05 | TM 参考 | `core_tools/tm_matcher.py` + `core_tools/tm_semantic.py` | 需确认 |
 
 `06 准备自检` 目前不在流程里；代码和九条断言保留在 `core_tools/preflight.py`，由 `pipeline_service.PREFLIGHT_ENABLED` 控制是否挂回流程。
 
-资料库里的游戏背景、人设、风格指南会截取前 1000 字，作为术语筛选的参考语境；术语库和记忆库直接决定第 03/05 步的数据。
+资料库里的游戏背景、人物人设、人物关系和风格指南会全文作为术语筛选的参考语境，不再截取前 1000 字符；术语库和记忆库直接决定第 03/05 步的数据。
+
+「人物人设」与「人物关系」是两个独立上传入口，分别支持 UTF-8 `.md` / `.txt` 文件，可单独替换和移除。每个入口对应一份文档，可在文档内部按角色组织。旧版「人设 / 关系」合并文件原样保留在「人物人设」入口并显示待拆分提示；用户上传新的人设文件后提示消失，「人物关系」需单独上传。升级不自动拆写文件，不改现有批次产物。
 
 对白支持客户的 `note = 完整 Key、key = 说话人` 格式：上下文和术语筛选读取同一身份信息，按活动、段号分组、句号数字排序，原始 `note`、`key` 和已有译文均保留。缺完整 Key 时不猜分段。更新后旧批次需重跑上下文及下游；若旧源文件丢失 `note`，应使用客户原始文件新建批次。
+
+## 活动对白场景 Context（2026-10-22）
+
+第 02 步只为「活动对白」生成场景分析。按完整 Key 分组、按数字句序通读该组全部已提供英文，并全文传入当前项目的人物人设、人物关系、游戏背景与风格资料，不摘要或截断人物原文。模型只选用与本组参与者、明确提及对象及当前剧情相关的信息；同一内容同时上传到多个入口时合并传入一次，并提示不能视为多份独立证据。
+
+每组分析一次，向本组各行写入相同的中文 Context：
+
+```text
+【场景结构】
+参与者、对白或独白的组织方式、明确的交流媒介与段内切换。
+
+【情境与基调】
+本段事件与发展、情绪和语气变化、需要保留的幽默、反讽、双关或线索。
+```
+
+当前英文决定剧情事实，人物背景帮助理解语气与关系，不把后续剧情提前写进台词。情绪 `thinking` 或角色后缀 `_remote` 不单独证明内心独白，气泡字段缺失时不默认媒介。KR、JP、FR 附录不自动成为德语规则。人物资料冲突、缺句或关键字段缺失时保留必要的不确定性。
+
+预览按组展示完整结果，可展开同组英文、已核验的关联名称／跨段线索、模型引用的对白和人物资料原文。对白引用须为英文中的连续片段；人物资料引用允许忽略 Markdown 行引用符、行内代码、加粗标记及排版空白，文字本身仍必须连续匹配，不能改写。语义解释仍需在本步人工确认。表格只写原有 `Context` 列，原文、已有译文与其他字段保持；UI、集卡和装饰物仍使用原文关联方式。现有术语筛选继续读取本行 Context。
+
+场景分析沿用 `config/config.json` 的 `llm` 配置，临时网络、限流及服务端错误最多尝试 3 次。无可靠分组、同段源文异常、分类冲突或完整 Key 重复时留空待确认；模型失败、输出格式或引用异常时本步失败，不发布本次不完整结果。通过校验的场景保存在批次的 `context_scenes/`，重试时复用相同输入的成功结果；缓存绑定全部资料、对白、提示词、模型和接口，任一变化都会重新分析。失败响应单独保存供诊断，只有重新通过全部校验后才能复用。选择「重跑本步」则清空本步场景缓存和旧 Context，重新分析；下游产物作废，规范化与分类结果保留。纯非对白批次不调用场景模型。
+
+旧批次不会自动重算。可在更新服务后重跑上下文及下游，或复制批次保留原产物再运行。底层 `ContextProcessor.process` 保留原关联模式，工作台和命令行适配器显式启用场景分析；人物资料由工作台当前项目资料库传入。
 
 ## TM 语义匹配（2026-10-22）
 
@@ -74,7 +98,7 @@ workspace/pipeline/
 GET  /api/pipeline/bootstrap
 POST /api/pipeline/projects
 POST /api/pipeline/projects/<id>/activate
-POST /api/pipeline/projects/<id>/library/<slot>       # termbase|tm|cast|world|style
+POST /api/pipeline/projects/<id>/library/<slot>       # termbase|tm|cast|relationships|world|style
 POST /api/pipeline/projects/<id>/batches
 GET  /api/pipeline/projects/<id>/batches/<batch>/state
 POST /api/pipeline/projects/<id>/batches/<batch>/run  # {stage?, mode?: run|rerun|retry, then_continue?}
@@ -97,7 +121,7 @@ GET  /api/pipeline/projects/<id>/batches/<batch>/artifact/<stage>
 - 只接 WC 的 **en → de**；新项目语言对固定，暂不支持其它语种。
 - 主工作台负责翻译前准备；翻译交给外部工具，返回文件可进入独立的标签清洗和译后 QA 页。QA 检查结构与一致性，不代表语言质量或客户验收。
 - 单机单用户，无登录；后台任务在 Flask 进程内跑，不要用多 worker 部署。
-- 术语筛选需要 `config/config.json` 里有效的模型配置；没有配置时该节点会失败并给出提示。
+- 活动对白场景分析与术语筛选需要 `config/config.json` 里有效的 `llm` 配置；没有配置时对应节点会失败并给出提示。
 - TM 的非精确匹配需要有效的向量和重排模型配置；首次生成整库向量会耗时并产生接口费用。
 - 准备自检暂时停用；恢复后它的“长度余量”按源文达到 limit 的 85% 计为告警，阈值在 `core_tools/preflight.py` 顶部。
 
