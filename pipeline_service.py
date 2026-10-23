@@ -27,6 +27,7 @@ from openpyxl import load_workbook
 
 from core_tools.term_filter import TermFilter
 from core_tools.term_scanner import TermScanner
+from core_tools.text_metrics import display_length
 from core_tools.tm_matcher import TMMatcher
 from core_tools.tm_semantic import SemanticTMRetriever
 from pipeline import (
@@ -184,7 +185,6 @@ def column(row: dict, *names):
 
 
 def display_len(value: str) -> int:
-    from core_tools.qa_checker import display_length
     return display_length(text(value))
 
 

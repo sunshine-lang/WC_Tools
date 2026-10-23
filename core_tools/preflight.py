@@ -12,7 +12,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from .qa_checker import PARAM_PATTERN, TAG_PATTERN, display_length
+from .text_metrics import PARAM_PATTERN, TAG_PATTERN, display_length
 
 
 PREFLIGHT_POLICY = 'wc-prep-preflight-v1'
