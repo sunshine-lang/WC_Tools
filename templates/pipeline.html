@@ -329,11 +329,12 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
     <div class="field">
       <label>语言对</label>
       <div class="two">
-        <select id="npSrc"><option value="en">en</option></select>
-        <select id="npTgt"><option value="de">de</option></select>
+        <select id="npSrc" aria-label="源语言"><option value="en">英语</option><option value="zh-CN">简体中文</option></select>
+        <select id="npTgt" aria-label="目标语言"><option value="de">德语</option></select>
       </div>
-      <div class="field-note">当前版本只接 WC 的 en → de 流水线。</div>
+      <div class="field-note">支持英语→德语、简体中文→美式英语。项目创建后语向固定，批次独立保存。</div>
     </div>
+    <div class="field-note">资料均为选填；上传后使用对应资料，未上传的术语库和记忆库会自动跳过。</div>
     <div class="warning">项目、资料库和批次都会保存到 workspace/pipeline，切换项目不会清空已有批次。</div>
     <div class="modal-foot">
       <button class="btn" onclick="closeProject()">取消</button>
@@ -451,8 +452,13 @@ async function api(url, options={}){
   return data;
 }
 
-const requiredReady = () => state.library.filter(x=>x.req).every(x=>x.ready);
-const missingRequired = () => state.library.filter(x=>x.req && !x.ready).map(x=>x.name);
+const missingMaterials = () => state.library.filter(x=>!x.ready).map(x=>x.name);
+function materialNotice(){
+  const missing = missingMaterials();
+  return `<div class="notice lib-notice"><span><b>建议上传完整的项目资料，有助于提高翻译准确率。</b><br>${missing.length
+    ? `当前未上传：${esc(missing.join('、'))}。资料暂缺也可开始准备，未上传的术语库和记忆库会自动跳过。`
+    : '项目资料已上传，可以返回工作台开始准备。'}</span></div>`;
+}
 
 /* ------------------------------------------------------------------ 状态装载 */
 function applyBootstrap(data, initial=false){
@@ -486,7 +492,7 @@ function applyBootstrap(data, initial=false){
     log('工作台就绪', '');
     if(state.batch) log(`批次 ${state.batch.name} · ${state.batch.rows} 行`, '');
     if(!state.server.llm_ready) log('模型接口未就绪：对白场景分析与术语筛选会失败，请检查 config/config.json', 'warn');
-    if(!state.server.tm_ready) log('TM 语义模型配置未就绪：请检查 config/config.json 中的 embedding / rerank', 'warn');
+    if(state.library.some(x=>x.key==='tm' && x.ready) && state.project?.use_tm !== false && !state.server.tm_ready) log('TM 语义模型配置未就绪：请检查 config/config.json 中的 embedding / rerank', 'warn');
     if(!state.server.key_rules_ready) log('缺少分类规则 profiles/game/wc_key_rules.json', 'warn');
   }
 }
@@ -498,7 +504,7 @@ function trackTransitions(initial, batchChanged){
     const prev = state.lastStates[s.key];
     if(prev && prev !== s.state){
       if(s.state === 'running') log(`${s.no} ${s.title} 开始…`, 'run');
-      else if(s.state === 'done') log(`${s.no} ${s.title} 完成${s.seconds ? ` · ${s.seconds}s` : ''}`, 'ok');
+      else if(s.state === 'done') log(`${s.no} ${s.title} ${s.skipped?'已跳过':'完成'}${s.seconds ? ` · ${s.seconds}s` : ''}`, 'ok');
       else if(s.state === 'review') log(`${s.no} ${s.title} 完成 · 等待确认`, 'ok');
       else if(s.state === 'failed') log(`${s.no} ${s.title} 失败：${s.message || ''}`, 'bad');
     }
@@ -531,7 +537,6 @@ function chooseActive(){
 function primaryAction(){
   if(!state.batch) return null;
   if(state.batch.running || state.busy) return {label:'执行中…', disabled:true};
-  if(!requiredReady()) return {label:'补齐资料库 →', fn:goLibrary};
   const review = state.stages.findIndex(s=>s.state === 'review');
   if(review >= 0) return {label:'继续确认 →', fn:()=>openStage(review)};
   const failed = state.stages.findIndex(s=>s.state === 'failed');
@@ -582,7 +587,7 @@ function renderSidebar(){
       <span class="num">${s.no}</span>
       <span class="title">${esc(s.title)}<small>${esc(s.sub)}</small></span>
       <span class="dot"></span>
-      <span class="flag">${s.confirm?'需确认':'自动'}</span>
+      <span class="flag">${s.skipped?'已跳过':s.confirm?'需确认':'自动'}</span>
     </li>`).join('');
   $('stageList').querySelectorAll('.stage-item').forEach(el=>{
     el.onclick = ()=>{
@@ -603,7 +608,7 @@ function renderSidebar(){
   const ready = state.library.filter(x=>x.ready).length;
   $('libCnt').textContent = `${ready} / ${total}`;
   $('libBtn').classList.toggle('active', state.view === 'library');
-  $('libBtn').title = `已就绪 ${ready} / ${total}；必需 ${state.library.filter(x=>x.req && x.ready).length} / ${state.library.filter(x=>x.req).length}`;
+  $('libBtn').title = `资料已上传 ${ready} / ${total}；均为选填`;
 
   const sel = $('batchSelect');
   sel.innerHTML = state.batches.map(b => `<option value="${esc(b.id)}">${esc(b.name)} · ${b.done}/${b.total} · ${esc((b.created_at || '').slice(11,16))}</option>`).join('');
@@ -622,9 +627,13 @@ function render(){
 }
 
 function renderUpload(){
-  const missing = missingRequired();
   const ready = state.library.filter(x=>x.ready).length;
   $('view').innerHTML = `
+    <details style="margin-bottom:18px" open>
+      <summary>文件列映射（标准表头可留空）</summary>
+      <p class="field-note">${state.project?.src === 'zh-CN' ? '默认中文源文 game_text_cn，英文目标 game_text_en。情绪从 animation / emotion 读取，中文列不会作为情绪。' : '默认英文源文 game_text_en，德语目标 game_text_de；兼容旧表的中文列情绪标记。'} 目标列不存在时补空列。</p>
+      <div class="two">${[['source','源文列'],['target','目标列'],['key','Key 列'],['note','完整 Key / 备注列'],['speaker','说话人列'],['emotion','情绪列'],['bubble','气泡类型列'],['limit','长度限制列']].map(([role,label])=>`<div class="field"><label for="map_${role}">${label}</label><input id="map_${role}" data-column-role="${role}" placeholder="自动识别"></div>`).join('')}</div>
+    </details>
     <div class="dropzone" id="dropzone">
       <div class="icon">📄</div>
       <h3>点击选择或拖入待译文件</h3>
@@ -632,8 +641,7 @@ function renderUpload(){
       <div class="hint">上传后会从规范化开始逐节点执行；文件、产物和进度都保存在 workspace/pipeline/</div>
     </div>
     ${state.project ? `<div class="notice ok" style="margin-top:18px"><span>当前项目：<b>${esc(state.project.name)}</b> · ${state.project.src} → ${state.project.tgt} · 资料库 ${ready} / ${state.library.length}</span></div>` : ''}
-    ${missing.length ? `<div class="notice"><span><b>还缺必需资料：</b>${esc(missing.join('、'))}。补齐后才能开始。</span>
-      <button class="btn" onclick="goLibrary()">去资料库 →</button></div>` : ''}`;
+    ${materialNotice()}`;
   bindDropzone();
 }
 
@@ -652,12 +660,8 @@ function bindDropzone(){
 }
 
 function renderOverview(){
-  const missing = missingRequired();
-  const ready = requiredReady();
   const total = state.library.filter(x=>x.ready).length;
-  const req = state.library.filter(x=>x.req);
-  const opt = state.library.filter(x=>!x.req);
-  const summary = `资料库 ${total} / ${state.library.length} · 必需 ${req.filter(x=>x.ready).length} / ${req.length} · 选填 ${opt.filter(x=>x.ready).length} / ${opt.length}`;
+  const summary = `资料已上传 ${total} / ${state.library.length} · 均为选填`;
   $('view').innerHTML = `
     <div class="filechip show">
       <div class="ico">✓</div>
@@ -668,15 +672,13 @@ function renderOverview(){
     </div>
     <div class="panel" style="margin-top:18px">
       <div class="desc">批次已载入。自动节点会连续执行，需要判断的节点会停下来等你确认；离开页面不会中断服务端进度。</div>
-      ${ready ? '' : `<div class="notice"><span><b>资料库还缺必需项：</b>${esc(missing.join('、'))}。补齐后才能开始。</span></div>`}
+      ${materialNotice()}
       ${!state.server.llm_ready ? `<div class="notice"><span><b>模型接口未就绪：</b>对白场景分析与术语筛选会失败，请检查 config/config.json。</span></div>` : ''}
-      ${!state.server.tm_ready ? `<div class="notice"><span><b>TM 语义模型配置未就绪：</b>请检查 config/config.json 中的 embedding / rerank，非精确匹配需要这两个接口。</span></div>` : ''}
+      ${state.library.some(x=>x.key==='tm' && x.ready) && state.project?.use_tm !== false && !state.server.tm_ready ? `<div class="notice"><span><b>TM 语义模型配置未就绪：</b>请检查 config/config.json 中的 embedding / rerank，非精确匹配需要这两个接口。</span></div>` : ''}
       ${!state.server.key_rules_ready ? `<div class="notice"><span><b>缺少分类规则：</b>profiles/game/wc_key_rules.json</span></div>` : ''}
       <div class="panel-foot">
-        ${ready
-          ? `<button class="btn primary" onclick="startRun()">开始准备</button>
-             <button class="btn" onclick="resetBatch()" title="重跑或清空本批次">重置</button>`
-          : `<button class="btn primary" onclick="goLibrary()">去资料库补齐 →</button>`}
+        <button class="btn primary" onclick="startRun()">开始准备</button>
+        <button class="btn" onclick="resetBatch()" title="重跑或清空本批次">重置</button>
         <span class="note">${summary}</span>
       </div>
     </div>`;
@@ -698,7 +700,7 @@ function downloadFinal(){
 function renderPanel(i){
   const s = state.stages[i];
   const st = s.state;
-  const badgeText = {pending:'待处理', running:'执行中', review:'待确认', done:'已确认', failed:'失败'}[st] || st;
+  const badgeText = s.skipped ? '已跳过' : {pending:'待处理', running:'执行中', review:'待确认', done:'已确认', failed:'失败'}[st] || st;
   const hasRun = st !== 'pending';
   const hasPreview = hasRun && ((s.stats && s.stats.length) || (s.preview && s.preview.type));
   const isPreflight = s.key === 'preflight';
@@ -759,10 +761,6 @@ function footHTML(i, st, download, report){
   const s = state.stages[i];
   const last = i === state.stages.length - 1;
   if(st === 'pending'){
-    if(!requiredReady()){
-      return `<button class="btn primary" onclick="goLibrary()">去资料库补齐 →</button>
-        <span class="note">补齐术语库与记忆库后才能开始</span>`;
-    }
     const firstPending = state.stages.findIndex(x=>x.state === 'pending');
     if(i === firstPending){
       return `<button class="btn primary" onclick="startStage(${i})">开始本步</button>
@@ -780,9 +778,9 @@ function footHTML(i, st, download, report){
       ${download}${report}<span class="note">前序产物已保留</span>`;
   }
   if(st === 'review'){
-    return `<button class="btn primary" onclick="confirmStage(${i})" ${requiredReady()?'':'disabled'}>确认并继续 →</button>
+    return `<button class="btn primary" onclick="confirmStage(${i})" >确认并继续 →</button>
       <button class="btn" onclick="rerunStage(${i})">重跑本步</button>
-      ${download}${report}<span class="note">${requiredReady()?'这一步需要你判断':'资料库缺少必需项'}</span>`;
+      ${download}${report}<span class="note">这一步需要你判断</span>`;
   }
   if(last){
     return `<button class="btn primary" disabled>全部完成</button>
@@ -803,8 +801,8 @@ function previewHTML(p){
         <div class="cell">${esc(scene.context)}</div>
         ${(scene.warnings || []).length ? `<div class="notice"><span>${scene.warnings.map(esc).join('<br>')}</span></div>` : ''}
         <details><summary>核对同段原文与判断依据</summary>
-          <div class="cell">${esc((scene.sources || []).map(r=>`${r.key} · ${r.speaker || '说话人未提供'}${r.emotion?' · '+r.emotion:''}${r.bubble_type?' · 气泡 '+r.bubble_type:''}\n${r.english}`).join('\n\n'))}</div>
-          ${(scene.references || []).length ? `<div class="cap">关联名称或跨段线索（不属于本段句序）</div><div class="cell">${esc(scene.references.map(r=>`${r.kind} · ${r.key}\n${r.english}`).join('\n\n'))}</div>` : ''}
+          <div class="cell">${esc((scene.sources || []).map(r=>`${r.key} · ${r.speaker || '说话人未提供'}${r.emotion?' · '+r.emotion:''}${r.bubble_type?' · 气泡 '+r.bubble_type:''}\n${r.source_text ?? r.english ?? ""}`).join('\n\n'))}</div>
+          ${(scene.references || []).length ? `<div class="cap">关联名称或跨段线索（不属于本段句序）</div><div class="cell">${esc(scene.references.map(r=>`${r.kind} · ${r.key}\n${r.source_text ?? r.english ?? ""}`).join('\n\n'))}</div>` : ''}
           <div class="cap">模型引用的原文依据</div><div class="cell">${esc((scene.evidence || []).map(r=>`${r.key}\n${r.quote}`).join('\n\n'))}</div>
           ${(scene.material_evidence || []).length ? `<div class="cap">模型引用的人物与背景资料</div><div class="cell">${esc(scene.material_evidence.map(r=>`${(scene.materials || []).find(m=>m.key===r.material)?.label || r.material}\n${r.quote}`).join('\n\n'))}</div>` : ''}
         </details>
@@ -855,29 +853,17 @@ function renderLibrary(){
     $('view').innerHTML = `<div class="empty">还没有项目</div>`;
     return;
   }
-  const req = state.library.filter(x=>x.req);
-  const opt = state.library.filter(x=>!x.req);
-  const reqDone = req.filter(x=>x.ready).length;
-  const optDone = opt.filter(x=>x.ready).length;
-  const missing = missingRequired();
   const busy = !!state.batch?.running;
   const note = busy
     ? `<div class="notice lib-notice"><span><b>有节点正在执行</b>，资料库暂不可修改；可以先返回工作台查看进度。</span>
         <button class="btn" onclick="goBatch()">返回工作台 →</button></div>`
-    : (missing.length
-      ? `<div class="notice lib-notice"><span><b>还缺必需资料：</b>${esc(missing.join('、'))}。补齐后才能开始准备。</span></div>`
-      : `<div class="notice ok lib-notice"><span>必需资料已齐，可以返回工作台开始准备。</span>
-          <button class="btn" onclick="goBatch()">返回工作台 →</button></div>`);
+    : materialNotice();
 
   $('view').innerHTML = `
     <div class="lib-head">
       <div>
         <h3>资料库 · ${esc(state.project.name)}</h3>
         <p>每个项目一套，各项资料单独上传和替换。人物人设与人物关系分开维护；背景、人设、关系和风格全文作为术语筛选的参考语境。</p>
-      </div>
-      <div style="margin-left:auto;text-align:right;color:var(--muted);font-size:12.5px">
-        必需 ${reqDone} / ${req.length} · 选填 ${optDone} / ${opt.length}<br>
-        <span style="font-size:11.5px">已就绪 ${reqDone + optDone} / ${state.library.length}</span>
       </div>
     </div>
     ${note}
@@ -887,13 +873,13 @@ function renderLibrary(){
           <div class="top">
             <span class="ic">${x.icon}</span>
             <span class="nm">${esc(x.name)}</span>
-            <span class="req ${x.req?'must':''}">${x.req?'必需':'选填'}</span>
+            <span class="req">选填</span>
           </div>
           <div class="ds">${esc(x.desc)}</div>
           ${x.notice ? `<div class="ds" style="color:#b45309">${esc(x.notice)}</div>` : ''}
           <div class="file ${x.ready?'':'empty'}">${x.ready ? esc(x.file) : '尚未上传'}</div>
           <div class="row">
-            <span class="st ${x.ready?'ok':'no'}">${x.ready?'已就绪':'缺失'}</span>
+            <span class="st ${x.ready?'ok':'no'}">${x.ready?'已就绪':'未上传'}</span>
             ${x.meta ? `<span style="font-size:11px;color:var(--muted)">${esc(x.meta)}</span>` : ''}
             <span class="actions">
               <button class="btn small" onclick="uploadLib('${x.key}')" ${busy?'disabled':''}>${x.ready?'替换':'上传'}</button>
@@ -1069,6 +1055,9 @@ async function uploadBatch(file){
   if(!state.project) return;
   const form = new FormData();
   form.append('file', file);
+  const mapping = {};
+  document.querySelectorAll('[data-column-role]').forEach(input=>{ if(input.value.trim()) mapping[input.dataset.columnRole]=input.value.trim(); });
+  form.append('columns_map', JSON.stringify(mapping));
   try {
     const data = await api(`/api/pipeline/projects/${state.project.id}/batches`, {method:'POST', body:form});
     applyBootstrap(data);
@@ -1098,7 +1087,7 @@ function removeLib(slot){
   if(!item) return;
   openAction({
     title: `移除「${item.name}」？`,
-    body: '移除后这个槽位会变成缺失；如果是术语库或记忆库，补齐前不能开始准备。',
+    body: '移除后可继续准备；未上传的术语库或记忆库会跳过对应步骤。已有批次产物保留，更新资料后需重跑相关步骤或新建批次。',
     okLabel: '移除',
     okClass: 'bad',
     onOk: () => doRemoveLib(slot)
@@ -1145,7 +1134,7 @@ async function createProject(){
     state.view = 'library';
     render();
     log(`新建项目：${name}`, 'ok');
-    toast('项目已创建，先上传术语库与记忆库', 'ok');
+    toast('项目已创建；建议补充资料提高翻译准确率，也可直接开始准备', 'ok');
   } catch (error) { toast(error.message); }
 }
 
@@ -1174,6 +1163,7 @@ async function activateBatch(batchId){
 }
 
 /* ------------------------------------------------------------------ 绑定 */
+$('npSrc').onchange = ()=>{ $('npTgt').innerHTML = $('npSrc').value === 'zh-CN' ? '<option value="en-US">美式英语（en-US）</option>' : '<option value="de">德语</option>'; };
 $('libBtn').onclick = goLibrary;
 $('backBtn').onclick = goBatch;
 $('projBtn').onclick = openProject;

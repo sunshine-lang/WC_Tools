@@ -74,7 +74,7 @@ class SemanticTMTests(unittest.TestCase):
         matcher = self.matcher([('Feline slumber', 'Katzenschlaf'), ('Buy a train ticket', 'Kaufe ein Zugticket')])
         with patch.object(SemanticTMRetriever, '_post', side_effect=self.response) as post:
             matches = matcher.find_matches('The cat naps.')
-        self.assertEqual([(m['english'], m['match_type']) for m in matches], [('Feline slumber', '语义相似')])
+        self.assertEqual([(m['source_text'], m['match_type']) for m in matches], [('Feline slumber', '语义相似')])
         self.assertEqual(post.call_count, 3)  # library, query, rerank
 
     def test_exact_and_normalized_matches_bypass_models_and_keep_variants(self):
@@ -161,8 +161,8 @@ class SemanticTMTests(unittest.TestCase):
         matcher = self.matcher([('Collect <b>{0}</b> feline tokens!', 'Sammle <b>{0}</b> Katzenmarken!')])
         with patch.object(SemanticTMRetriever, '_post', side_effect=self.response):
             match = matcher.find_matches('Gather {1} cat coins!')[0]
-        self.assertIn('<b>{0}</b>', match['english'])
-        self.assertIn('<b>{0}</b>', match['german'])
+        self.assertIn('<b>{0}</b>', match['source_text'])
+        self.assertIn('<b>{0}</b>', match['target_text'])
         self.assertTrue(any('参数不同' in w for w in match['warnings']))
 
     def test_pipeline_enables_semantics_and_only_appends_reference_column(self):
@@ -175,7 +175,7 @@ class SemanticTMTests(unittest.TestCase):
                              'tm_cache_dir': self.cache}, source, output)
         self.assertEqual(result['state'], 'completed', result)
         self.assertEqual(result['counts']['相似参考'], 1)
-        self.assertEqual(result['tm_policy'], 'wc-en-de-semantic-v1')
+        self.assertEqual(result['tm_policy'], 'wc-pair-semantic-v2')
         self.assertEqual(source.read_bytes(), before_bytes)
         before, after = load_workbook(source), load_workbook(output)
         try:
@@ -218,7 +218,7 @@ class SemanticTMTests(unittest.TestCase):
                                 ('Feline slumber', 'Katzenschlaf')])
         with patch.object(SemanticTMRetriever, '_post', side_effect=self.response) as post:
             matches = matcher.find_matches('The cat naps.')
-        self.assertEqual(matches[0]['german'], 'Katzenschlaf')
+        self.assertEqual(matches[0]['target_text'], 'Katzenschlaf')
         for call in post.call_args_list:
             if isinstance(call.args[1].get('input'), list):
                 self.assertNotIn('', call.args[1]['input'])

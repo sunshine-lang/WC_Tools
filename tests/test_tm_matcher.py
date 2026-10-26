@@ -68,7 +68,7 @@ class TMMatcherTests(unittest.TestCase):
         self.assertEqual(tm.status()['pair_count'], 2)
         self.assertEqual(tm.status()['conflict_count'], 1)
         matches = tm.find_matches('Same source')
-        self.assertEqual([m['german'] for m in matches], ['Variante A', 'Variante B'])
+        self.assertEqual([m['target_text'] for m in matches], ['Variante A', 'Variante B'])
         self.assertEqual(len(matches[0]['origins']), 2)
         self.assertEqual(matches[0]['origins'][0]['document'], 'original1.xlsx')
         self.assertEqual(matches[0]['origins'][0]['previous'], 'Previous context')
@@ -95,9 +95,9 @@ class TMMatcherTests(unittest.TestCase):
         xml = '<?xml version="1.0" encoding="utf-16"?><!DOCTYPE tmx SYSTEM "tmx14.dtd">' + ET.tostring(root, encoding='unicode')
         self.tm.write_bytes(xml.encode('utf-16'))
         tm = TMMatcher(self.tm)
-        self.assertEqual(tm.groups[0]['english'], 'Collect <color=#fff>{0}</color>\nstars!')
-        self.assertEqual(tm.groups[0]['variants'][0]['german'], tm.groups[0]['english'])
-        self.assertNotIn('mq:', tm.format_matches(tm.find_matches(tm.groups[0]['english'])))
+        self.assertEqual(tm.groups[0]['source_text'], 'Collect <color=#fff>{0}</color>\nstars!')
+        self.assertEqual(tm.groups[0]['variants'][0]['target_text'], tm.groups[0]['source_text'])
+        self.assertNotIn('mq:', tm.format_matches(tm.find_matches(tm.groups[0]['source_text'])))
 
     def test_wrong_language_empty_and_ambiguous_units_do_not_silently_pass(self):
         self.save_tm([('中文', 'English')], ('zh-CN', 'en-US'))
@@ -110,7 +110,7 @@ class TMMatcherTests(unittest.TestCase):
         tuv = ET.SubElement(root.find('.//tu'), 'tuv', {'lang': 'en-GB'})
         ET.SubElement(tuv, 'seg').text = 'Another source'
         ET.ElementTree(root).write(self.tm)
-        with self.assertRaisesRegex(ValueError, '多个英语'):
+        with self.assertRaisesRegex(ValueError, '多个源语'):
             TMMatcher(self.tm)
 
     def test_decodes_historical_context_and_preserves_unknown_markup(self):
@@ -165,7 +165,7 @@ class TMMatcherTests(unittest.TestCase):
                             [None, 'bad', '', '=1+1', '', '待确认', '', '']])
         task = self.run_match(path)
         self.assertEqual(task['state'], 'completed', task)
-        self.assertEqual(task['counts'], {'原文一致': 1, '相似参考': 0, '未命中': 1, '待确认': 1})
+        self.assertEqual(task['counts'], {'原文一致': 1, '相似参考': 0, '未命中': 1, '待确认': 1, '未使用': 0})
         self.assertEqual(task['matched_count'], 1)
         before, after = load_workbook(path), load_workbook(task['result_file'])
         try:

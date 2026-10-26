@@ -1,6 +1,8 @@
 """翻译准备工作台的 HTTP 接口。"""
 from __future__ import annotations
 
+import json
+
 from flask import Blueprint, jsonify, make_response, render_template, request, send_file
 
 from pipeline_service import PipelineError, service
@@ -37,7 +39,7 @@ def bootstrap():
 def create_project():
     data = request.get_json(silent=True) or {}
     return _guard(lambda: service.create_project(
-        data.get('name', ''), data.get('src', 'en'), data.get('tgt', 'de')
+        data.get('name', ''), data.get('src', 'en'), data.get('tgt', 'de'), data.get('use_tm', True)
     ))
 
 
@@ -58,7 +60,15 @@ def remove_library(project_id, slot):
 
 @bp.route('/api/pipeline/projects/<project_id>/batches', methods=['POST'])
 def create_batch(project_id):
-    return _guard(lambda: service.create_batch(project_id, request.files.get('file')))
+    def create():
+        try:
+            mapping = json.loads(request.form.get('columns_map', '{}'))
+        except (ValueError, TypeError):
+            raise PipelineError('列映射格式无效')
+        if not isinstance(mapping, dict):
+            raise PipelineError('列映射必须是对象')
+        return service.create_batch(project_id, request.files.get('file'), mapping)
+    return _guard(create)
 
 
 @bp.route('/api/pipeline/projects/<project_id>/batches/<batch_id>/activate', methods=['POST'])

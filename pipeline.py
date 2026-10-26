@@ -15,6 +15,7 @@ import json
 import sys
 import time
 import traceback
+from core_tools.language import language_pair
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -72,7 +73,7 @@ def _task(task: dict | None = None) -> tuple[dict, dict]:
 def run_normalize(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.normalizer import Normalizer
 
-    module = Normalizer(speakers=ctx['game'].get('speakers', ()))
+    module = Normalizer(speakers=ctx['game'].get('speakers', ()), language=ctx.get('language'))
     tasks, task = _task(task)
     module.process(str(source), str(target), tasks, 't')
     return task
@@ -82,7 +83,7 @@ def run_classify(ctx: dict, source: Path, target: Path, task: dict | None = None
     from core_tools.key_classifier import KeyClassifier
 
     rules = ROOT / ctx['game']['key_rules']
-    module = KeyClassifier(str(rules))
+    module = KeyClassifier(str(rules), language=ctx.get('language'))
     tasks, task = _task(task)
     module.process(str(source), str(target), tasks, 't')
     return task
@@ -91,7 +92,7 @@ def run_classify(ctx: dict, source: Path, target: Path, task: dict | None = None
 def run_context(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.context_processor import ContextProcessor
 
-    module = ContextProcessor()
+    module = ContextProcessor(language=ctx.get('language'))
     reference = ctx['game'].get('context', {}).get('reference')
     guide = ctx['game'].get('context', {}).get('guide')
     tasks, task = _task(task)
@@ -108,8 +109,8 @@ def run_context(ctx: dict, source: Path, target: Path, task: dict | None = None)
 def run_term(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.term_scanner import TermScanner
 
-    termbases = ctx['language']['termbases']
-    module = TermScanner(str(ROOT / termbases[0]))
+    termbases = ctx['language'].get('termbases', [])
+    module = TermScanner(str(ROOT / termbases[0]) if termbases else None, language=ctx.get('language'))
     tasks, task = _task(task)
     module.process(str(source), str(target), tasks, 't')
     return task
@@ -118,19 +119,28 @@ def run_term(ctx: dict, source: Path, target: Path, task: dict | None = None) ->
 def run_term_filter(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.term_filter import TermFilter
 
-    module = TermFilter(materials=ctx.get('materials'))
+    module = TermFilter(config_path=ctx.get('config_path'), materials=ctx.get('materials'), language=ctx.get('language'))
     tasks, task = _task(task)
-    module.process(str(source), str(target), tasks, 't')
+    skip_terms = 'termbases' in ctx.get('language', {}) and not ctx['language']['termbases']
+    module.process(str(source), str(target), tasks, 't', skip_terms=skip_terms)
+    if task.get('state') == 'completed' and skip_terms:
+        reason = '未提供术语库，已跳过术语筛选，生效术语和无效术语列留空'
+        task.update(skipped=True, skip_reason=reason, status=reason)
     return task
 
 
 def run_tm(ctx: dict, source: Path, target: Path, task: dict | None = None) -> dict:
     from core_tools.tm_matcher import TMMatcher
 
-    module = TMMatcher(str(ROOT / ctx['language']['tms'][0]), semantic=True,
-                       config_path=ctx.get('config_path'), cache_dir=ctx.get('tm_cache_dir'))
+    memories = ctx['language'].get('tms', []) if ctx['language'].get('use_tm', True) else []
+    module = TMMatcher(str(ROOT / memories[0]) if memories else None, semantic=True,
+                       config_path=ctx.get('config_path'), cache_dir=ctx.get('tm_cache_dir'), language=ctx.get('language'))
     tasks, task = _task(task)
     module.process(str(source), str(target), tasks, 't')
+    if task.get('state') == 'completed' and not memories:
+        reason = ('未提供记忆库，已跳过 TM 检索，TM参考列留空' if ctx['language'].get('use_tm', True)
+                  else '本项目选择不使用 TM，已跳过检索，TM参考列留空')
+        task.update(skipped=True, skip_reason=reason, status=reason)
     return task
 
 
@@ -141,7 +151,7 @@ def run_preflight(ctx: dict, source: Path, target: Path, task: dict | None = Non
     tasks, task = _task(task)
     batch_dir = Path(ctx.get('batch_dir') or target.parent)
     preflight_process(batch_dir / '00-规范化.xlsx', source, tasks, 't',
-                      batch_name=ctx.get('batch_name') or batch_dir.name)
+                      batch_name=ctx.get('batch_name') or batch_dir.name, language=ctx.get('language'))
     return task
 
 
@@ -225,6 +235,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('source', help='待译文件（xlsx/csv）')
     parser.add_argument('--game', default='wc')
     parser.add_argument('--lang', default='en-de')
+    parser.add_argument('--termbase', help='当前语向术语库路径')
+    tm_options = parser.add_mutually_exclusive_group()
+    tm_options.add_argument('--tm', help='当前语向 TMX 路径')
+    tm_options.add_argument('--no-tm', action='store_true', help='明确不使用 TM，参考列留空')
+    parser.add_argument('--source-column')
+    parser.add_argument('--target-column')
+    parser.add_argument('--emotion-column')
     parser.add_argument('--batch', default=None, help='批次名，默认取文件名')
     parser.add_argument('--stages', default=None, help='只跑这些阶段，逗号分隔')
     parser.add_argument('--keep-going', action='store_true', help='某阶段失败也继续')
@@ -239,6 +256,15 @@ def main(argv: list[str] | None = None) -> int:
 
     enabled = set(args.stages.split(',')) if args.stages else None
     pipeline = Pipeline(args.game, args.lang, args.batch or source.stem)
+    if args.termbase:
+        pipeline.language['termbases'] = [str(Path(args.termbase).expanduser().resolve())]
+    if args.tm:
+        pipeline.language['tms'] = [str(Path(args.tm).expanduser().resolve())]
+    if args.no_tm:
+        pipeline.language.update(tms=[], use_tm=False)
+    mapping = {k: v for k, v in {'source': args.source_column, 'target': args.target_column,
+                                 'emotion': args.emotion_column}.items() if v}
+    pipeline.language.update(language_pair(pipeline.language, mapping).as_dict())
     print(f'批次 {pipeline.batch}  →  {pipeline.dir}\n')
 
     results = pipeline.run(source, enabled=enabled, keep_going=args.keep_going,

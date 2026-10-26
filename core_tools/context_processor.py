@@ -11,6 +11,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 
 from .key_classifier import CATEGORIES, EMOTIONS, PENDING, KeyClassifier
 from .dialogue_context import DIALOGUE_CONTEXT_POLICY, DialogueContextAnalyzer
+from .language import language_pair
 
 
 MATERIAL_DIR = Path(__file__).resolve().parents[2]
@@ -19,6 +20,7 @@ DEFAULT_GUIDE = MATERIAL_DIR / '柠檬微趣_WC指导材料.xlsx'
 CONTEXT_POLICY = 'wc-ui-compact-v2'
 STATUSES = ('已关联', '缺资料', '待确认')
 DIALOGUE_KEY = re.compile(r'mdnew_(.+)_mdnew_decoration_(intro|\d+)_(\d+)', re.IGNORECASE)
+STORY_KEY = re.compile(r'(story\d+(?:_\d+)?_(?:begin|end|task)|fire\d+)_(\d+)', re.IGNORECASE)
 
 
 def text(value):
@@ -28,7 +30,8 @@ def text(value):
 def dialogue_identity(key, speaker, note):
     """兼容客户把完整对白 Key 放在 note、说话人放在 key 的表格。"""
     key, speaker, note = (text(value).strip() for value in (key, speaker, note))
-    if not DIALOGUE_KEY.fullmatch(key) and DIALOGUE_KEY.fullmatch(note):
+    matches = lambda value: DIALOGUE_KEY.fullmatch(value) or STORY_KEY.fullmatch(value)
+    if not matches(key) and matches(note):
         if not key or key.casefold() == speaker.casefold() or (
                 not speaker and re.fullmatch(r"[A-Za-z][A-Za-z .'-]{0,60}", key)):
             return note, speaker or key
@@ -42,7 +45,8 @@ def validate_material_name(name):
 
 
 class ContextProcessor:
-    def __init__(self, reference_path=DEFAULT_REFERENCE, guide_path=DEFAULT_GUIDE, materials_dir=MATERIAL_DIR):
+    def __init__(self, reference_path=DEFAULT_REFERENCE, guide_path=DEFAULT_GUIDE, materials_dir=MATERIAL_DIR, language=None):
+        self.language = language_pair(language)
         self.reference_path = Path(reference_path)
         self.guide_path = Path(guide_path)
         self.materials_dir = Path(materials_dir).resolve()
@@ -70,11 +74,12 @@ class ContextProcessor:
                 for kind, path in [('本目录待译材料', self.reference_path), ('人设与背景', self.guide_path)]]
 
     @staticmethod
-    def read_records(workbook, source_name, classified=False):
+    def read_records(workbook, source_name, classified=False, language=None):
+        pair = language_pair(language)
         records = []
         for sheet in workbook:
-            headers = {text(c.value).strip().casefold(): c.column for c in sheet[1] if c.value is not None}
-            en_col = headers.get('game_text_en') or headers.get('en')
+            headers = pair.headers(c.value for c in sheet[1])
+            en_col = pair.column(headers, 'source')
             if not en_col:
                 continue
             if classified and '分类' not in headers:
@@ -88,14 +93,15 @@ class ContextProcessor:
 
             width = max(c.column for row in sheet for c in row if c.value is not None)
             for row in range(2, sheet.max_row + 1):
-                english = value(row, 'game_text_en', 'en')
-                if not english and not (classified and value(row, '分类')):
+                get = lambda *names: value(row, *names)
+                source_text = pair.value(get, 'source')
+                if not source_text and not (classified and value(row, '分类')):
                     continue
-                key = value(row, 'key').strip()
-                speaker = value(row, 'speaker').strip()
-                emotion = value(row, 'animation').strip()
-                chinese = value(row, 'game_text_cn', 'cn')
-                note = value(row, 'note', '备注')
+                key = pair.value(get, 'key').strip()
+                speaker = pair.value(get, 'speaker').strip()
+                emotion = pair.emotion(get).strip()
+                chinese = '' if pair.chinese else value(row, 'game_text_cn', 'cn')
+                note = pair.value(get, 'note')
                 if not speaker and chinese.strip().casefold() in EMOTIONS and re.fullmatch(r"[A-Za-z][A-Za-z .'-]{0,60}", key):
                     speaker, emotion, chinese = key, chinese.strip(), ''
                     # 原始混合需求表把对白 Key 放在 note 列，工作副本中则没有。
@@ -105,13 +111,13 @@ class ContextProcessor:
                 key, speaker = dialogue_identity(key, speaker, note)
                 if not emotion and chinese.strip().casefold() in EMOTIONS and speaker:
                     emotion = chinese.strip()
-                bubble = value(row, 'bubbletype', 'bubble_type').strip()
+                bubble = pair.value(get, 'bubble').strip()
                 if re.fullmatch(r'\d+\.0+', bubble):
                     bubble = bubble.split('.')[0]
                 records.append({
                     'id': f'{sheet.title}:{row}', 'sheet': sheet.title, 'row': row, 'width': width,
                     'source': f'{source_name} / {sheet.title}!{row}', 'key': key,
-                    'english': english, 'speaker': speaker, 'emotion': emotion,
+                    'source_text': source_text, 'speaker': speaker, 'emotion': emotion,
                     'bubble': bubble, 'chinese': chinese,
                     'note': note.strip(), 'category': value(row, '分类').strip(),
                     'formula': sheet.cell(row, en_col).data_type == 'f',
@@ -124,6 +130,7 @@ class ContextProcessor:
         card = re.fullmatch(r'a(.+)_set(\d+)(?:_(\d+))?_name', key)
         decor = re.fullmatch(r'mdnew_(.+)_mdnew_decoration_name_(\d+)', key)
         dialogue = DIALOGUE_KEY.fullmatch(key)
+        story = STORY_KEY.fullmatch(key)
         if card:
             activity, number, item = card.groups()
             return activity, f'{activity}/set/{int(number)}', f'卡册{int(number)}', int(item or 0), ''
@@ -134,6 +141,10 @@ class ContextProcessor:
             activity, number, line = dialogue.groups()
             label = '活动开场' if number == 'intro' else f'装饰物{int(number)}对白'
             return activity, f'{activity}/dialogue/{number}', label, int(line), number
+        if story:
+            prefix, line = story.groups()
+            activity = prefix.split('_')[0]
+            return activity, f'{activity}/dialogue/{prefix}', prefix, int(line), prefix
         activity = ''
         if key.startswith(('cat_multiboards_', 'catmultiboards_')) or key == 'offer_cat':
             activity = 'cat'
@@ -197,14 +208,14 @@ class ContextProcessor:
         if record['key']:
             candidates = by_key.get(record['key'], [])
             if candidates:
-                matching = [r for r in candidates if r['english'].strip() == record['english'].strip()]
+                matching = [r for r in candidates if r['source_text'].strip() == record['source_text'].strip()]
                 if not matching:
-                    return None, '待确认', '相同 Key 的参考英文与本条不一致，请核对版本'
+                    return None, '待确认', '相同 Key 的参考源文与本条不一致，请核对版本'
                 candidates = matching
             else:
                 return None, '缺资料', '参考文件未找到此 Key'
         else:
-            candidates = by_english.get(record['english'].strip(), [])
+            candidates = by_english.get(record['source_text'].strip(), [])
         if record['speaker']:
             candidates = [r for r in candidates if r['speaker'] == record['speaker']
                           and (not record['emotion'] or r['emotion'] == record['emotion'])]
@@ -292,7 +303,7 @@ class ContextProcessor:
                 titles = [r for r in peers if r['key'].casefold().endswith('_title')
                           and not any(part in r['key'].casefold() for part in ('_complete_', '_success_', '_fail_', '_book_'))]
                 anchors = overview if record['key'].casefold().startswith(('offer_', 'chain_gift_')) else titles + overview
-                anchor = next((r for r in anchors if r['id'] != record['id'] and r['english'] != record['english']), None)
+                anchor = next((r for r in anchors if r['id'] != record['id'] and r['source_text'] != record['source_text']), None)
                 if anchor:
                     selected.append(anchor)
         selected = selected or [record]
@@ -308,18 +319,18 @@ class ContextProcessor:
         if record['bubble']:
             details.append('思考' if record['bubble'] == '2' else '正常对话' if record['bubble'] == '1' else '气泡' + record['bubble'])
         details = [item for item in details if item]
-        return label + (' (' + ' / '.join(details) + ')' if details else '') + ': ' + record['english']
+        return label + (' (' + ' / '.join(details) + ')' if details else '') + ': ' + record['source_text']
 
     def build_context(self, record, reference, status, warning, groups, activities, roles, images, enhanced=False):
         effective = dict(reference or record)
-        effective['english'] = record['english']
+        effective['source_text'] = record['source_text']
         warnings = [warning] if warning else []
         if not reference:
             self.prepare_relations([effective])
         if record['category'] == PENDING or record['category'] not in CATEGORIES:
             status, warnings = '待确认', ['分类尚未确认，请先核对第一步结果']
-        if record['formula'] or not record['english'].strip():
-            status, warnings = '待确认', ['英文源文为空或为公式，请先核对源文']
+        if record['formula'] or not record['source_text'].strip():
+            status, warnings = '待确认', ['源文为空或为公式，请先核对源文']
         if not effective.get('group'):
             message = ('缺少完整对白 Key，不能按说话人或行号推断分段' if record['speaker']
                        else '无 Key 或活动归属未明确，无法可靠分组')
@@ -339,7 +350,9 @@ class ContextProcessor:
             # 只引用上传文件内已核对的前段线索，不用模型补写。
             prior = [r for r in activities.get(effective['activity'], [])
                      if r['key'] == 'mdnew_forestconcert_mdnew_decoration_5_10']
-            if any('treble' in r['english'].casefold() for r in selected) and prior and 'treble clef' in prior[0]['english'].casefold():
+            keyword = '高音谱号' if self.language.chinese else 'treble clef'
+            mention = '高音谱号' if self.language.chinese else 'treble'
+            if any(mention in r['source_text'].casefold() for r in selected) and prior and keyword in prior[0]['source_text'].casefold():
                 selected.extend(prior)
             else:
                 warnings.append('未找到或无法验证第5段的高音谱号解释')
@@ -392,23 +405,23 @@ class ContextProcessor:
                 reference_path = self.resolve_material(str(reference_path))
                 guide_path = self.resolve_material(str(guide_path))
             workbook = load_workbook(input_file)
-            records = self.read_records(workbook, task.get('input_name', Path(input_file).name), classified=True)
+            records = self.read_records(workbook, task.get('input_name', Path(input_file).name), classified=True, language=self.language)
             if not records:
-                raise ValueError('未找到待处理记录，须包含英文源文列和“分类”列')
+                raise ValueError('未找到待处理记录，须包含源文列和“分类”列')
             references, roles = [], {}
             if enhance:
                 if not reference_path.is_file():
                     raise ValueError('所选本目录材料不存在，请重新选择或关闭可选补充')
                 reference_workbook = load_workbook(reference_path, data_only=True)
-                references = self.read_records(reference_workbook, task.get('reference_name', reference_path.name))
+                references = self.read_records(reference_workbook, task.get('reference_name', reference_path.name), language=self.language)
                 if not references:
-                    raise ValueError('原始参考未找到 game_text_en 或 en 英文源文列')
+                    raise ValueError('原始参考未找到 当前语向对应的源文列')
                 roles = self.load_roles(guide_path, task.get('guide_name'))
             by_key, by_english = defaultdict(list), defaultdict(list)
             for r in references:
                 if r['key']:
                     by_key[r['key']].append(r)
-                by_english[r['english'].strip()].append(r)
+                by_english[r['source_text'].strip()].append(r)
             effective_records, matches = [], {}
             for record in records:
                 effective = dict(record)
@@ -459,14 +472,14 @@ class ContextProcessor:
                 if analyze_dialogue and record['category'] == CATEGORIES[3] and group and status != '待确认':
                     if group not in scene_results and group not in blocked_scenes:
                         peers = sorted((r for r in effective_records if r['group'] == group), key=lambda r: r['order'])
-                        if any(r['formula'] or not r['english'].strip() or r['category'] != CATEGORIES[3]
+                        if any(r['formula'] or not r['source_text'].strip() or r['category'] != CATEGORIES[3]
                                or matches[r['id']][1] == '待确认' for r in peers):
                             blocked_scenes[group] = '同段存在异常源文、分类或版本冲突，场景分析留空，请核对后重跑'
                         elif len({r['key'].casefold() for r in peers}) != len(peers) or len({r['order'] for r in peers}) != len(peers):
                             blocked_scenes[group] = '同段完整 Key 重复，无法确定对白顺序，场景分析留空'
                         else:
                             if analyzer is None:
-                                analyzer = DialogueContextAnalyzer(config_path, materials=materials, cache_dir=scene_cache_dir)
+                                analyzer = DialogueContextAnalyzer(config_path, materials=materials, cache_dir=scene_cache_dir, language=self.language)
                             input_warnings = []
                             if any(not r['bubble'] for r in peers):
                                 input_warnings.append('本组存在未提供气泡类型的台词，交流媒介或内心独白只能依据明确原文判断')
@@ -497,7 +510,7 @@ class ContextProcessor:
                 cell.alignment = Alignment(vertical='top', wrap_text=True)
                 result.append({'id': record['id'], 'sheet': record['sheet'], 'row': record['row'],
                                'key': effective['key'], 'speaker': effective['speaker'],
-                               'english': record['english'], 'category': record['category'],
+                               'source_text': record['source_text'], 'category': record['category'],
                                'group': effective.get('group', ''), 'status': status, 'context': context,
                                'images': selected, 'warning': effective.get('warning', ''),
                                'source': record['source'], 'reference_source': effective.get('reference_source', ''),

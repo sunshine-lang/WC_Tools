@@ -160,12 +160,13 @@ class PipelineServiceStateTests(unittest.TestCase):
         self.assertTrue(all(s['state'] == 'pending' for s in state['stages']))
         self.assertFalse((self.workspace / 'projects/p/batches' / self.batch['id'] / '01-分类.xlsx').exists())
 
-    def test_fresh_store_requires_explicit_glossary_and_tm_uploads(self):
+    def test_fresh_store_keeps_optional_libraries_empty(self):
         fresh = PipelineService(root=self.workspace, workspace=self.workspace / 'fresh')
         data = fresh.bootstrap()
         slots = {item['key']: item for item in data['project']['library']}
         self.assertFalse(slots['termbase']['ready'])
         self.assertFalse(slots['tm']['ready'])
+        self.assertTrue(all(not slot['req'] for slot in slots.values()))
         self.assertEqual(slots['cast']['name'], '人物人设')
         self.assertEqual(slots['relationships']['name'], '人物关系')
         self.assertFalse(slots['cast']['ready'])
@@ -206,8 +207,8 @@ class PipelineServiceStateTests(unittest.TestCase):
         new_tm = TMMatcher(reloaded._project_tm(project))
         self.assertEqual(old_term.scan_text('Hello'), 'Hello (Hallo)')
         self.assertEqual(new_term.scan_text('Hello'), 'Hello (Guten Tag)')
-        self.assertEqual(old_tm.find_matches('Hello')[0]['german'], 'Hallo')
-        self.assertEqual(new_tm.find_matches('Hello')[0]['german'], 'Guten Tag')
+        self.assertEqual(old_tm.find_matches('Hello')[0]['target_text'], 'Hallo')
+        self.assertEqual(new_tm.find_matches('Hello')[0]['target_text'], 'Guten Tag')
 
     def test_pipeline_http_upload_and_bootstrap_use_project_library(self):
         import io
@@ -263,7 +264,7 @@ class PipelineServiceStateTests(unittest.TestCase):
         source = folder / 'source.xlsx'
         scene = {'group': 'forestconcert/dialogue/3',
                  'context': '【场景结构】\n' + '完整场景。' * 200 + '\n\n【情境与基调】\n可核对的语气说明。',
-                 'sources': [{'key': 'scene_1', 'english': 'Hello', 'speaker': 'Max', 'emotion': '', 'bubble_type': ''}],
+                 'sources': [{'key': 'scene_1', 'source_text': 'Hello', 'speaker': 'Max', 'emotion': '', 'bubble_type': ''}],
                  'references': [], 'evidence': [{'key': 'scene_1', 'quote': 'Hello'}],
                  'materials': [{'key': 'cast', 'label': '人物人设'}],
                  'material_evidence': [{'material': 'cast', 'quote': '人物资料。'}], 'warnings': []}

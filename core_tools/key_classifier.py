@@ -12,19 +12,18 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
 
+from .language import EMOTIONS, language_pair
+
+
 CATEGORIES = ('活动 UI 与商店文案', '集卡名称', '装饰物名称', '活动对白')
 PENDING = '待确认'
 META_HEADERS = ('分类',)
-EMOTIONS = {
-    'neutral', 'happy', 'thinking', 'confused', 'investigating', 'proud', 'laughing',
-    'eureka', 'annoyed', 'shocked', 'surprised', 'fear', 'angry', 'sad', 'flirting',
-    'blushing', 'crying', 'worried', 'normal',
-}
 
 
 class KeyClassifier:
-    def __init__(self, config_path):
+    def __init__(self, config_path, language=None):
         self.config_path = config_path
+        self.language = language_pair(language)
 
     def load_rules(self):
         with open(self.config_path, encoding='utf-8') as file:
@@ -58,9 +57,9 @@ class KeyClassifier:
     def text(value):
         return '' if value is None else str(value)
 
-    def classify(self, key, english, emotion, speaker, rules):
-        if not english.strip():
-            return PENDING, '缺少英文源文'
+    def classify(self, key, source_text, emotion, speaker, rules):
+        if not source_text.strip():
+            return PENDING, '缺少源文'
         if speaker.strip() or (
             emotion.casefold() in EMOTIONS
             and re.fullmatch(r"[A-Za-z][A-Za-z .'-]{0,60}", key)
@@ -123,8 +122,8 @@ class KeyClassifier:
             fingerprint = hashlib.sha256(Path(input_file).read_bytes()).hexdigest()[:12]
             records = []
             for sheet_index, sheet in enumerate(workbook.worksheets):
-                headers = {self.text(c.value).strip().casefold(): c.column for c in sheet[1] if c.value is not None}
-                en_col = headers.get('game_text_en') or headers.get('en')
+                headers = self.language.headers(c.value for c in sheet[1])
+                en_col = self.language.column(headers, 'source')
                 if not en_col:
                     continue
                 if any(name.casefold() in headers for name in (*META_HEADERS, '记录ID', '文本类型', '分类依据', '检查提示')):
@@ -145,17 +144,18 @@ class KeyClassifier:
                 for row in range(2, sheet.max_row + 1):
                     if not any(sheet.cell(row, c).value is not None for c in range(1, width + 1)):
                         continue
-                    raw_key = value(row, 'key')
-                    emotion = value(row, 'animation') or value(row, 'game_text_cn', 'cn')
-                    speaker = value(row, 'speaker')
+                    get = lambda *names: value(row, *names)
+                    raw_key = self.language.value(get, 'key')
+                    emotion = self.language.emotion(get)
+                    speaker = self.language.value(get, 'speaker')
                     source_cell = sheet.cell(row, en_col)
-                    english = self.text(source_cell.value)
-                    category, basis = self.classify(raw_key, english, emotion, speaker, rules)
+                    source_text = self.text(source_cell.value)
+                    category, basis = self.classify(raw_key, source_text, emotion, speaker, rules)
                     warnings = []
                     if source_cell.data_type == 'f':
-                        category, basis = PENDING, '英文单元格为公式，请核对实际源文'
-                    if not english.strip():
-                        warnings.append('缺少英文源文')
+                        category, basis = PENDING, '源文单元格为公式，请核对实际源文'
+                    if not source_text.strip():
+                        warnings.append('缺少源文')
                     inferred_dialogue = not speaker and emotion.casefold() in EMOTIONS and bool(
                         re.fullmatch(r"[A-Za-z][A-Za-z .'-]{0,60}", raw_key)
                     )
@@ -167,7 +167,7 @@ class KeyClassifier:
                         if raw_key in seen_keys:
                             warnings.append(f'Key 与第 {seen_keys[raw_key]} 行重复')
                         seen_keys[raw_key] = row
-                    limit = value(row, 'limit')
+                    limit = self.language.value(get, 'limit')
                     if not limit:
                         warnings.append('未提供长度限制')
                     record = {
@@ -175,7 +175,7 @@ class KeyClassifier:
                         'row': row, 'key': '' if inferred_dialogue else raw_key,
                         'speaker': raw_key if inferred_dialogue else speaker,
                         'emotion': emotion if speaker or inferred_dialogue else '',
-                        'english': english, 'limit': limit, 'category': category,
+                        'source_text': source_text, 'limit': limit, 'category': category,
                         'basis': basis, 'warning': '；'.join(warnings),
                     }
                     records.append(record)
@@ -183,7 +183,7 @@ class KeyClassifier:
                 task['status'] = f'已识别 {len(records)} 条记录，正在生成分类文件...'
                 task['progress'] = 80
             if not records:
-                raise ValueError('未找到待分类记录；表头须包含 game_text_en 或 en')
+                raise ValueError('未找到待分类记录；请核对源文列：' + ' / '.join(self.language.aliases('source')))
             self.save_workbook(workbook, output_file)
             task.update(progress=100, status=f'分类完成，共 {len(records)} 条',
                         state='completed', result_file=output_file, records=records,

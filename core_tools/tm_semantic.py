@@ -1,4 +1,4 @@
-"""English TM retrieval: cached embeddings + BM25 recall + remote reranking.
+"""Source-language TM retrieval: cached embeddings + BM25 recall + remote reranking.
 
 Only source text is retrieved. Original bilingual strings remain in TMMatcher;
 Context and terminology are left for the downstream translator to interpret.
@@ -21,16 +21,20 @@ import requests
 from rank_bm25 import BM25Okapi
 
 
-SEMANTIC_POLICY = 'wc-en-de-semantic-v1'
+from .language import language_pair, source_tokens
+
+
+SEMANTIC_POLICY = 'wc-pair-semantic-v2'
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def word_tokens(text):
-    return re.findall(r"[^\W_]+(?:'[^\W_]+)?", text.casefold())
+def word_tokens(text, chinese=False):
+    return source_tokens(text, chinese)
 
 
 class SemanticTMRetriever:
-    def __init__(self, config_path=None, cache_dir=None):
+    def __init__(self, config_path=None, cache_dir=None, language=None):
+        self.language = language_pair(language)
         try:
             cfg = json.loads(Path(config_path or ROOT / 'config/config.json').read_text('utf-8'))
             self.embedding = cfg.get('embedding', {})
@@ -143,7 +147,7 @@ class SemanticTMRetriever:
         return self._vectors(np.concatenate(matrices), len(texts))
 
     def prepare(self, sources, tm_hash, progress=None):
-        identity = {'policy': SEMANTIC_POLICY, 'tm_sha256': tm_hash,
+        identity = {'policy': SEMANTIC_POLICY, 'language': self.language.key, 'tm_sha256': tm_hash,
                     'sources_sha256': hashlib.sha256(json.dumps(sources, ensure_ascii=False).encode()).hexdigest(),
                     'model': self.embedding['model_name'],
                     'endpoint_sha256': hashlib.sha256(self.embedding['api_url'].encode()).hexdigest()}
@@ -175,7 +179,7 @@ class SemanticTMRetriever:
         self.vectors = (matrix / norms).astype(np.float32)
         self._fingerprint = fingerprint
         self.sources = sources
-        tokenized = [word_tokens(s) for s in sources]
+        tokenized = [word_tokens(s, self.language.chinese) for s in sources]
         self.bm25 = BM25Okapi(tokenized) if any(tokenized) else None
 
     def rerank(self, query, documents):
@@ -203,9 +207,9 @@ class SemanticTMRetriever:
         if vector.shape[0] != self.vectors.shape[1]:
             raise ValueError('查询与记忆库向量维度不一致，请更换模型后重新生成缓存')
         semantic = self.vectors @ (vector / np.linalg.norm(vector.astype(np.float64)))
-        lexical = self.bm25.get_scores(word_tokens(query)) if self.bm25 else np.zeros(len(self.sources))
+        lexical = self.bm25.get_scores(word_tokens(query, self.language.chinese)) if self.bm25 else np.zeros(len(self.sources))
         maximum = float(np.max(lexical))
-        lexical = lexical / maximum if maximum > 5.0 else np.zeros_like(lexical)
+        lexical = lexical / maximum if maximum > (0 if self.language.chinese else 5.0) else np.zeros_like(lexical)
         hybrid = 0.7 * semantic + 0.3 * lexical
         indices = np.argsort(-hybrid, kind='stable')[:self.recall_k].tolist()
         scores = self.rerank(query, [self.sources[i] for i in indices])

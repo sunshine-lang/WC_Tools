@@ -101,7 +101,7 @@ class ContextProcessorTests(unittest.TestCase):
         record = self.run_context(path)['records'][0]
         self.assertEqual(record['status'], '待确认')
         self.assertEqual(record['context'], '')
-        self.assertIn('参考英文', record['warning'])
+        self.assertIn('参考源文', record['warning'])
         path = self.main([[None, 'cat_multiboards_pre_desc', '', 'Old source', None, CATEGORIES[1]]])
         self.assertIn('分类与参考', self.run_context(path)['records'][0]['warning'])
 
@@ -271,7 +271,7 @@ class ContextProcessorTests(unittest.TestCase):
             self.assertIn('classified.xlsx', record['source'])
 
     def test_rank_entry_and_results_do_not_mix_states(self):
-        path = self.main([[None, key, '', english, None, CATEGORIES[0]] for key, english in [
+        path = self.main([[None, key, '', source_text, None, CATEGORIES[0]] for key, source_text in [
             ('forestconcert_rank_title', 'Sprint'),
             ('forestconcert_rank_score_need', 'Collect {0} tokens'),
             ('forestconcert_rank_start_desc', 'Join the race'),

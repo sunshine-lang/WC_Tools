@@ -14,15 +14,19 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
+from .language import language_pair
+
+
 POLICY = 'normalize-v1'
 
 
 class Normalizer:
     def __init__(self, speakers=(), key_column='key', speaker_column='speaker',
-                 trim_empty_columns=True):
+                 trim_empty_columns=True, language=None):
+        self.language = language_pair(language)
         self.speakers = {str(s).strip().casefold() for s in speakers if str(s).strip()}
-        self.key_column = key_column.casefold()
-        self.speaker_column = speaker_column
+        self.key_column = self.language.columns.get('key', key_column).casefold()
+        self.speaker_column = self.language.columns.get('speaker', speaker_column)
         self.trim_empty_columns = trim_empty_columns
 
     # ---------------------------------------------------------------- 读入
@@ -56,7 +60,12 @@ class Normalizer:
             for sheet in workbook.worksheets:
                 if self.trim_empty_columns:
                     trimmed += self.trim(sheet)
-                added_speaker += self.fill_speaker(sheet)
+                headers = self.language.headers(c.value for c in sheet[1])
+                if self.language.column(headers, 'source'):
+                    if not self.language.column(headers, 'target'):
+                        sheet.cell(1, sheet.max_column + 1,
+                                   self.language.columns.get('target') or self.language.aliases('target')[0])
+                    added_speaker += self.fill_speaker(sheet)
 
             task['status'] = '正在写出规范化文件...'
             workbook.save(output_file)

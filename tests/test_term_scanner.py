@@ -62,7 +62,7 @@ class TermScannerTests(unittest.TestCase):
         self.assertEqual(scanner.status()['term_count'], 1)
         self.assertEqual(scanner.conflict_count, 1)
         match = scanner.find_matches('A safe.')[0]
-        self.assertEqual(match['german'], ['Tresor', 'sicher'])
+        self.assertEqual(match['target_text'], ['Tresor', 'sicher'])
         self.assertEqual(len(match['sources']), 3)
         task = self.run_scan(self.source([[None, 'safe', '', 'A safe.', None, '活动 UI 与商店文案', None]]))
         self.assertEqual(task['counts']['待确认'], 1)
@@ -106,7 +106,7 @@ class TermScannerTests(unittest.TestCase):
         original = source.read_bytes()
         task = self.run_scan(source)
         self.assertEqual(task['state'], 'completed', task)
-        self.assertEqual(task['counts'], {'命中术语': 1, '未命中': 0, '待确认': 0})
+        self.assertEqual(task['counts'], {'命中术语': 1, '未命中': 0, '待确认': 0, '未使用': 0})
         self.assertEqual(source.read_bytes(), original)
         before, after = load_workbook(source), load_workbook(task['result_file'])
         try:
@@ -130,7 +130,7 @@ class TermScannerTests(unittest.TestCase):
                               [None, 'Max', 'happy', 'Nothing relevant', None, '活动对白', None]])
         task = self.run_scan(source)
         self.assertEqual(task['state'], 'completed', task)
-        self.assertEqual(task['counts'], {'命中术语': 0, '未命中': 1, '待确认': 2})
+        self.assertEqual(task['counts'], {'命中术语': 0, '未命中': 1, '待确认': 2, '未使用': 0})
         self.assertEqual(task['records'][2]['speaker'], 'Max')
         self.assertEqual(task['records'][2]['terms'], '')
         book = load_workbook(task['result_file'])

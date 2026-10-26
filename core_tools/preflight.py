@@ -12,6 +12,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from .language import language_pair
 from .text_metrics import PARAM_PATTERN, TAG_PATTERN, display_length
 
 
@@ -73,8 +74,10 @@ def tags(value: str) -> Counter:
     return Counter(found)
 
 
-def tm_blocks(value: str) -> list[dict]:
+def tm_blocks(value: str, language=None) -> list[dict]:
     """解析 `[TM参考 n｜类型]` 块，返回每块的英文与德文。"""
+    pair = language_pair(language)
+    source_label, target_label = pair.labels
     blocks = []
     header_pattern = re.compile(r'\[TM参考\s+(\d+)\s*[｜|]\s*([^\]]+)\]')
     matches = list(header_pattern.finditer(value))
@@ -82,16 +85,16 @@ def tm_blocks(value: str) -> list[dict]:
         start = match.end()
         end = matches[index + 1].start() if index + 1 < len(matches) else len(value)
         body = value[start:end]
-        english = ''
-        german = ''
-        english_match = re.search(r'【英】\s*(.*?)(?=\n【德】|\Z)', body, re.S)
-        german_match = re.search(r'【德】\s*(.*?)(?=\n\[TM参考|\Z)', body, re.S)
+        source_text = ''
+        target_text = ''
+        english_match = re.search(rf'【{source_label}】\s*(.*?)(?=\n【{target_label}】|\Z)', body, re.S)
+        german_match = re.search(rf'【{target_label}】\s*(.*?)(?=\n提示：|\n\[TM参考|\Z)', body, re.S)
         if english_match:
-            english = english_match.group(1).strip()
+            source_text = english_match.group(1).strip()
         if german_match:
-            german = german_match.group(1).strip()
+            target_text = german_match.group(1).strip()
         blocks.append({'number': int(match.group(1)), 'type': match.group(2).strip(),
-                       'english': english, 'german': german})
+                       'source_text': source_text, 'target_text': target_text})
     return blocks
 
 
@@ -99,8 +102,9 @@ def check_row(ok: bool, name: str, detail: str, gate: str) -> dict:
     return {'key': name, 'ok': bool(ok), 'name': name, 'detail': detail, 'gate': gate}
 
 
-def preflight(source_path: Path, final_path: Path, batch_name: str = '') -> dict:
+def preflight(source_path: Path, final_path: Path, batch_name: str = '', language=None) -> dict:
     """执行九条断言，返回 checks / stats / preview / report 文本。"""
+    pair = language_pair(language)
     source_header, source_rows = read_sheet(Path(source_path))
     final_header, final_rows = read_sheet(Path(final_path))
 
@@ -120,25 +124,25 @@ def preflight(source_path: Path, final_path: Path, batch_name: str = '') -> dict
     details['columns'] = (source_header, final_header)
 
     # 3. 目标列未写入（准备阶段不应替人翻译）
-    target_rows = [get(row, 'game_text_de') for row in final_rows]
-    target_ok = bool(target_rows) and all(not value.strip() for value in target_rows)
+    target_rows = [get(row, *pair.aliases('target')) for row in final_rows]
+    target_ok = target_rows == [get(row, *pair.aliases('target')) for row in source_rows]
     checks.append(check_row(target_ok, '目标列未写入',
-                            'game_text_de 逐行为空' if target_ok else '发现非空译文，准备阶段不应写目标列',
+                            '目标列与输入保持一致' if target_ok else '目标列被修改，准备阶段不应写译文',
                             BLOCK))
 
     # 4. 源文未改写
-    source_pairs = [(get(row, 'key'), get(row, 'game_text_en')) for row in source_rows]
-    final_pairs = [(get(row, 'key'), get(row, 'game_text_en')) for row in final_rows]
+    source_pairs = [(get(row, *pair.aliases('key')), get(row, *pair.aliases('source'))) for row in source_rows]
+    final_pairs = [(get(row, *pair.aliases('key')), get(row, *pair.aliases('source'))) for row in final_rows]
     source_ok = source_pairs == final_pairs
     changed = sum(1 for a, b in zip(source_pairs, final_pairs) if a != b)
     checks.append(check_row(source_ok, '源文未改写',
-                            'key 与 game_text_en 未变化' if source_ok else f'{changed} 行源文或 key 发生变化',
+                            'Key 与源文未变化' if source_ok else f'{changed} 行源文或 key 发生变化',
                             BLOCK))
 
     # 5. 标签序列一致
     tag_bad = 0
     for before, after in zip(source_rows, final_rows):
-        if tags(get(before, 'game_text_en')) != tags(get(after, 'game_text_en')):
+        if tags(get(before, *pair.aliases('source'))) != tags(get(after, *pair.aliases('source'))):
             tag_bad += 1
     checks.append(check_row(tag_bad == 0, '标签序列一致',
                             '标签与占位符计数一致' if tag_bad == 0 else f'{tag_bad} 行标签或占位符变化',
@@ -147,8 +151,8 @@ def preflight(source_path: Path, final_path: Path, batch_name: str = '') -> dict
     # 6. 无重复槽位
     duplicate = 0
     for row in final_rows:
-        blocks = tm_blocks(get(row, 'TM参考'))
-        if len({(b['type'], b['english']) for b in blocks}) != len(blocks):
+        blocks = tm_blocks(get(row, 'TM参考'), pair)
+        if len({(b['type'], b['source_text']) for b in blocks}) != len(blocks):
             duplicate += 1
     checks.append(check_row(duplicate == 0, '无重复槽位',
                             'TM参考 单元格无重复块' if duplicate == 0 else f'{duplicate} 行出现重复 TM 块',
@@ -159,24 +163,24 @@ def preflight(source_path: Path, final_path: Path, batch_name: str = '') -> dict
     exact = 0
     refs = 0
     for row in final_rows:
-        current = get(row, 'game_text_en')
-        for block in tm_blocks(get(row, 'TM参考')):
+        current = get(row, *pair.aliases('source'))
+        for block in tm_blocks(get(row, 'TM参考'), pair):
             refs += 1
-            if not block['english'] or not block['german']:
+            if not block['source_text'] or not block['target_text']:
                 dangling += 1
             if block['type'] == '原文一致':
                 exact += 1
-                if block['english'] != current:
+                if block['source_text'] != current:
                     dangling += 1
     checks.append(check_row(dangling == 0, '无悬空引用',
                             f'{refs} 条参考均可追溯，其中原文一致 {exact} 条' if dangling == 0
-                            else f'{dangling} 条参考缺英/德文或原文对不上',
+                            else f'{dangling} 条参考缺源文/译文或原文对不上',
                             BLOCK))
 
     # 8. 长度余量：源文已达到 limit 的 85%，交付前最好人工确认
     near = []
     for row in final_rows:
-        raw_limit = get(row, 'limit')
+        raw_limit = get(row, *pair.aliases('limit'))
         if not raw_limit:
             continue
         try:
@@ -185,10 +189,10 @@ def preflight(source_path: Path, final_path: Path, batch_name: str = '') -> dict
             continue
         if limit <= 0:
             continue
-        length = display_length(get(row, 'game_text_en'))
+        length = display_length(get(row, *pair.aliases('source')))
         if length / limit >= NEAR_LIMIT_RATIO:
-            near.append({'row': get(row, 'key') or '—', 'length': length, 'limit': limit,
-                         'source': get(row, 'game_text_en')})
+            near.append({'row': get(row, *pair.aliases('key')) or '—', 'length': length, 'limit': limit,
+                         'source': get(row, *pair.aliases('source'))})
     checks.append(check_row(not near, '长度余量',
                             f'{len(near)} 条接近 limit（≥{int(NEAR_LIMIT_RATIO * 100)}%），需人工确认'
                             if near else '没有接近 limit 的源文',
@@ -261,7 +265,7 @@ def render_report(batch_name: str, checks: list[dict], details: dict, rows: int)
     return '\n'.join(lines)
 
 
-def process(source_path, final_path, task_dict, task_id, batch_name=''):
+def process(source_path, final_path, task_dict, task_id, batch_name='', language=None):
     """模块适配：与其余 core_tools 一样接收 task_dict/task_id。"""
     task = task_dict[task_id]
     try:
@@ -273,7 +277,7 @@ def process(source_path, final_path, task_dict, task_id, batch_name=''):
         if not final_path.is_file():
             raise ValueError('找不到 TM 产物，无法自检')
         task.update(progress=45, status='正在核对行数、列、源文与标签...')
-        result = preflight(source_path, final_path, batch_name)
+        result = preflight(source_path, final_path, batch_name, language)
         task.update(progress=85, status='正在生成自检报告...')
         final_path = Path(final_path)
         report_path = final_path.with_name('06-自检报告.md')

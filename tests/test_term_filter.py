@@ -57,12 +57,12 @@ class TermFilterTests(unittest.TestCase):
 
     @staticmethod
     def classify(record):
-        return [{'term': term, 'decision': 'exclude' if 'minor key' in record['english'] else 'keep',
-                 'reason': '音乐调性，不是钥匙' if 'minor key' in record['english'] else '本句指实际钥匙'}
+        return [{'term': term, 'decision': 'exclude' if 'minor key' in record['source_text'] else 'keep',
+                 'reason': '音乐调性，不是钥匙' if 'minor key' in record['source_text'] else '本句指实际钥匙'}
                 for term in record['candidates']]
 
     def test_model_receives_english_context_and_ids_without_target_or_secret_leak(self):
-        record = dict(english='minor key', context='Music puzzle', category='活动对白', key='', speaker='Max', emotion='happy',
+        record = dict(source_text='minor key', context='Music puzzle', category='活动对白', key='', speaker='Max', emotion='happy',
                       candidates=['key (Schlüssel)', 'Max (Max)'])
         response = self.response([{'id': 1, 'decision': 'keep', 'reason': '人名'},
                                   {'id': 0, 'decision': 'exclude', 'reason': '音乐调性'}])
@@ -72,7 +72,7 @@ class TermFilterTests(unittest.TestCase):
         self.assertEqual([d['decision'] for d in result], ['exclude', 'keep'])
         payload = json.loads(post.call_args.kwargs['json']['messages'][1]['content'])
         self.assertEqual(payload['context'], 'Music puzzle')
-        self.assertEqual(payload['english'], 'minor key')
+        self.assertEqual(payload['source_text'], 'minor key')
         self.assertEqual(payload['speaker'], 'Max')
         self.assertNotIn('TEST_SECRET', json.dumps(payload))
         self.assertNotIn('TEST_SECRET', json.dumps(self.tool.status()))
@@ -101,7 +101,7 @@ class TermFilterTests(unittest.TestCase):
         materials = {key: f'{key}_START\n' + '完整资料。' * 400 + f'\n{key}_END'
                      for key in ('world', 'cast', 'relationships', 'style')}
         tool = TermFilter(self.config, materials=materials)
-        record = dict(english='A key', context='', category='活动对白', key='scene_1',
+        record = dict(source_text='A key', context='', category='活动对白', key='scene_1',
                       speaker='Max', emotion='', candidates=['key (Schlüssel)'])
         response = self.response([{'id': 0, 'decision': 'keep', 'reason': '本句指钥匙'}])
         with patch('core_tools.term_filter.requests.post', return_value=response) as post:
@@ -113,7 +113,7 @@ class TermFilterTests(unittest.TestCase):
             self.assertIn(f'{key}_END', background)
 
     def test_incomplete_duplicate_invented_and_empty_reason_responses_rejected(self):
-        record = dict(english='Hello', context='', category='', key='', speaker='', emotion='', candidates=['Chad (Chad)'])
+        record = dict(source_text='Hello', context='', category='', key='', speaker='', emotion='', candidates=['Chad (Chad)'])
         for items in [[], [{'id': 2, 'decision': 'keep', 'reason': 'new'}],
                       [{'id': True, 'decision': 'keep', 'reason': 'bad id'}],
                       [{'id': 0, 'decision': 'keep', 'reason': ''}],
@@ -125,7 +125,7 @@ class TermFilterTests(unittest.TestCase):
                     self.tool.filter_terms_with_llm(record)
 
     def test_http_and_timeout_errors_are_safe(self):
-        record = dict(english='Hi', context='', category='', key='', speaker='', emotion='', candidates=['Chad (Chad)'])
+        record = dict(source_text='Hi', context='', category='', key='', speaker='', emotion='', candidates=['Chad (Chad)'])
         with patch('core_tools.term_filter.requests.post', side_effect=requests.Timeout('TEST_SECRET')) as post, \
                 patch('time.sleep'):
             with self.assertRaisesRegex(ValueError, '超时') as caught:
@@ -170,7 +170,7 @@ class TermFilterTests(unittest.TestCase):
         self.assertFalse((self.root / 'result.xlsx').exists())
 
     def test_transient_transport_failures_and_gateway_errors_share_retry_limit(self):
-        record = dict(english='Hi Chad', context='', category='', key='', speaker='', emotion='', candidates=['Chad (Chad)'])
+        record = dict(source_text='Hi Chad', context='', category='', key='', speaker='', emotion='', candidates=['Chad (Chad)'])
         response = self.response([{'id': 0, 'decision': 'keep', 'reason': '本行指角色人名'}])
         for error in (requests.Timeout('TEST_SECRET'), requests.ConnectionError('TEST_SECRET')):
             with self.subTest(error=type(error).__name__), \

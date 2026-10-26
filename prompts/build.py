@@ -8,6 +8,7 @@ Do not edit dist/ by hand.
 from __future__ import annotations
 
 import re
+import argparse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -31,9 +32,14 @@ def block(text: str, name: str) -> str:
 
 
 def main() -> int:
-    base = BASE.read_text('utf-8')
-    DIST.mkdir(exist_ok=True)
-    scenes = sorted(SCENES.glob('*.md'))
+    parser = argparse.ArgumentParser(description='生成各场景的完整翻译提示词')
+    parser.add_argument('--lang', choices=('en-de', 'zh-en-US'), default='en-de')
+    args = parser.parse_args()
+    source = ROOT / 'zh-en-US' if args.lang == 'zh-en-US' else ROOT
+    destination = DIST / 'zh-en-US' if args.lang == 'zh-en-US' else DIST
+    base = (source / 'base.md').read_text('utf-8')
+    destination.mkdir(exist_ok=True, parents=True)
+    scenes = sorted((source / 'scenes').glob('*.md'))
     if not scenes:
         raise SystemExit('no scenes found')
 
@@ -57,9 +63,9 @@ def main() -> int:
             raise ValueError(f'{scene_path.name}: unresolved placeholders: {missing}')
 
         output_name = metadata(scene, 'OUTPUT')
-        output = DIST / output_name
+        output = destination / output_name
         output.write_text(text.rstrip() + '\n', 'utf-8')
-        print(f'{scene_path.name} -> dist/{output_name} ({len(text)} chars)')
+        print(f'{scene_path.name} -> {output.relative_to(ROOT)} ({len(text)} chars)')
 
     return 0
 

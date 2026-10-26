@@ -27,6 +27,7 @@ from openpyxl import load_workbook
 
 from core_tools.term_filter import TermFilter
 from core_tools.term_scanner import TermScanner
+from core_tools.language import language_pair, EMOTIONS
 from core_tools.text_metrics import display_length
 from core_tools.tm_matcher import TMMatcher
 from core_tools.tm_semantic import SemanticTMRetriever
@@ -45,9 +46,9 @@ DEFAULT_WORKSPACE = ROOT / 'workspace' / 'pipeline'
 STORE_VERSION = 2
 
 SLOTS = (
-    {'key': 'termbase', 'name': '术语库', 'req': True, 'icon': '📗', 'accept': '.xlsx,.csv',
-     'desc': '源语言 ↔ 目标语言的词条对照，按词边界匹配。'},
-    {'key': 'tm', 'name': '记忆库', 'req': True, 'icon': '🗂', 'accept': '.tmx',
+    {'key': 'termbase', 'name': '术语库', 'req': False, 'icon': '📗', 'accept': '.xlsx,.csv',
+     'desc': '当前语向的词条对照；中文支持连续文本，英文按词边界匹配。'},
+    {'key': 'tm', 'name': '记忆库', 'req': False, 'icon': '🗂', 'accept': '.tmx',
      'desc': '历史源文与译文，TMX 格式，用于找相同或相近的句子。'},
     {'key': 'cast', 'name': '人物人设', 'req': False, 'icon': '👤', 'accept': '.md,.txt',
      'desc': '角色身份、性格与表达习惯，全文作为术语筛选的参考语境。'},
@@ -77,10 +78,10 @@ STAGES = (
      'desc': '按项目规则给每一行打文本类型。它同时决定下游选哪套提示词，以及长度校验对哪些行生效。'},
     {'key': 'context', 'no': '02', 'title': '上下文', 'sub': '关联原文，通读对白情景',
      'artifact': '02-上下文.xlsx', 'confirm': True,
-     'desc': 'UI、集卡和装饰物关联原文。活动对白按完整 Key 分组、句序排序，结合资料库的人物人设、人物关系与同段英文，生成「场景结构＋情境与基调」，同组共用一份；两类原文依据可展开核对。'},
+     'desc': 'UI、集卡和装饰物关联原文。活动对白按完整 Key 分组、句序排序，结合资料库的人物人设、人物关系与同段源文，生成「场景结构＋情境与基调」，同组共用一份；两类原文依据可展开核对。'},
     {'key': 'term', 'no': '03', 'title': '术语', 'sub': '词边界匹配，长词优先',
      'artifact': '03-术语.xlsx', 'confirm': False,
-     'desc': '英语源用词边界匹配，大小写不敏感，长词优先并剔除已命中片段，避免「key」命中「keyboard」。候选全部保留，不做取舍。'},
+     'desc': '按当前源语言匹配术语，中文支持连续文本，英文保留词边界与词形规则。长词优先，候选交给下一步语境筛选。'},
     {'key': 'term_filter', 'no': '04', 'title': '术语筛选', 'sub': '结合语境判真假',
      'artifact': '04-术语筛选.xlsx', 'confirm': True,
      'desc': '把候选词放回句子里，让模型判断它是否真的生效。项目资料库里的背景、人物人设、人物关系与风格指南会全文作为参考语境送给模型。'},
@@ -338,7 +339,7 @@ class PipelineService:
                                        if ready and item.get('legacy_combined') else ''),
                             'ready': ready, 'updated_at': item.get('updated_at', '')})
         return {'id': project['id'], 'name': project['name'], 'src': project['src'],
-                'tgt': project['tgt'], 'game': project.get('game', 'wc'),
+                'tgt': project['tgt'], 'use_tm': project.get('use_tm', True), 'game': project.get('game', 'wc'),
                 'library': library, 'created_at': project.get('created_at', '')}
 
     def _project_list(self, store: dict, active_id: str) -> list[dict]:
@@ -376,19 +377,24 @@ class PipelineService:
                 'server': self._server_status(),
             }
 
-    def create_project(self, name: str, src: str = 'en', tgt: str = 'de') -> dict:
+    def create_project(self, name: str, src: str = 'en', tgt: str = 'de', use_tm: bool = True) -> dict:
         name = text(name).strip()
         if not name:
             raise PipelineError('请填写项目名称')
         if len(name) > 80:
             raise PipelineError('项目名称最多 80 个字符')
-        if src != 'en' or tgt != 'de':
-            raise PipelineError('当前版本只支持 en → de 的 WC 流水线')
+        try:
+            pair = language_pair({'src': src, 'tgt': tgt})
+        except ValueError as error:
+            raise PipelineError(str(error)) from error
+        if type(use_tm) is not bool:
+            raise PipelineError('use_tm 必须是布尔值')
+        src, tgt = pair.source_lang, pair.target_lang
         with self.lock:
             store = self._read_store()
             project_id = f'p_{uuid.uuid4().hex[:10]}'
             store['projects'][project_id] = {
-                'id': project_id, 'name': name, 'src': src, 'tgt': tgt, 'game': 'wc',
+                'id': project_id, 'name': name, 'src': src, 'tgt': tgt, 'game': 'wc', 'use_tm': use_tm,
                 'created_at': now(), 'library': {key: None for key in SLOT_KEYS},
                 'active_batch': None,
             }
@@ -435,13 +441,15 @@ class PipelineService:
             stored = folder / f'{datetime.now().strftime("%Y%m%d%H%M%S")}_{uuid.uuid4().hex[:6]}_{filename}'
             upload.save(stored)
             try:
-                meta = self._validate_library(slot, stored)
+                meta = self._validate_library(slot, stored, language_pair(project))
             except Exception as error:
                 stored.unlink(missing_ok=True)
                 raise PipelineError(f'{slot_def["name"]}校验失败：{error}') from error
             project.setdefault('library', {})[slot] = {
                 'path': self._relative(stored), 'name': filename, 'meta': meta, 'updated_at': now(),
             }
+            if slot == 'tm':
+                project['use_tm'] = True
             self._write_store(store)
             return self.bootstrap(project['id'])
 
@@ -463,12 +471,12 @@ class PipelineService:
                 path.unlink(missing_ok=True)
             return self.bootstrap(project['id'])
 
-    def _validate_library(self, slot: str, path: Path) -> str:
+    def _validate_library(self, slot: str, path: Path, language=None) -> str:
         if slot == 'termbase':
-            status = TermScanner(str(path)).status()
+            status = TermScanner(str(path), language=language).status()
             return f'{status["term_count"]} 条'
         if slot == 'tm':
-            status = TMMatcher(str(path)).status()
+            status = TMMatcher(str(path), language=language).status()
             return f'{status["tu_count"]:,} 对'
         if path.stat().st_size > MAX_TEXT_BYTES:
             raise ValueError('文本资料不能超过 2MB')
@@ -525,7 +533,7 @@ class PipelineService:
         state['updated_at'] = now()
         write_json(self._batch_file(project_id, state['id']), state)
 
-    def create_batch(self, project_id: str, upload) -> dict:
+    def create_batch(self, project_id: str, upload, columns_map=None) -> dict:
         if not upload or not upload.filename:
             raise PipelineError('请选择待译文件')
         filename = safe_name(upload.filename)
@@ -541,13 +549,14 @@ class PipelineService:
             source = folder / f'source{suffix}'
             upload.save(source)
             try:
-                rows, columns, _ = self._inspect_source(source)
+                pair = language_pair(project, columns_map if columns_map is not None else {})
+                rows, columns, _ = self._inspect_source(source, pair)
             except Exception as error:
                 shutil.rmtree(folder, ignore_errors=True)
                 raise PipelineError(f'文件无法读取：{error}') from error
             state = {
                 'id': batch_id, 'project_id': project['id'], 'name': filename, 'rows': rows,
-                'columns': columns, 'source': source.name, 'created_at': now(), 'updated_at': now(),
+                'columns': columns, 'language': pair.as_dict(), 'source': source.name, 'created_at': now(), 'updated_at': now(),
                 'running': False, 'active_stage': None,
                 'stages': {key: {'state': 'pending', 'progress': 0, 'status': ''} for key in ORDER},
             }
@@ -599,6 +608,7 @@ class PipelineService:
             state = {
                 'id': new_id, 'project_id': project['id'], 'name': batch.get('name', ''),
                 'rows': batch.get('rows', 0), 'columns': batch.get('columns', []),
+                'language': batch.get('language', language_pair(project).as_dict()),
                 'source': batch['source'], 'created_at': now(), 'updated_at': now(),
                 'running': False, 'active_stage': None, 'parent_batch': batch_id,
                 'stages': {key: {'state': 'pending', 'progress': 0, 'status': ''} for key in ORDER},
@@ -624,7 +634,9 @@ class PipelineService:
             artifact = self._batch_dir(project_id, state['id']) / meta['artifact']
             item = {
                 **meta,
+                'desc': info.get('desc', meta['desc']),
                 'state': status,
+                'skipped': bool(info.get('skipped')),
                 'seconds': info.get('seconds', 0),
                 'message': info.get('message', ''),
                 'stats': info.get('stats', []),
@@ -649,38 +661,43 @@ class PipelineService:
             'final_download_url': (f'/api/pipeline/projects/{project_id}/batches/{state["id"]}/final'
                                    if final_path.is_file() else ''),
             'final_name': final_name if final_path.is_file() else '',
+            'language': state.get('language', {}),
         }
 
-    def _inspect_source(self, path: Path):
-        suffix = path.suffix.lower()
-        if suffix == '.csv':
-            with path.open(encoding='utf-8-sig', newline='') as file:
-                rows = list(csv.reader(file))
-            if not rows:
-                raise ValueError('文件是空的')
-            header = [text(cell).strip() for cell in rows[0]]
-            source = next((i for i, name in enumerate(header)
-                           if name.casefold() in ('game_text_en', 'en')), None)
-            if source is None:
-                raise ValueError('未找到 game_text_en 或 en 源文列')
-            count = sum(1 for row in rows[1:] if source < len(row) and text(row[source]).strip())
-            return count, header, 'csv'
-        workbook = load_workbook(path, read_only=True, data_only=True)
+    def _inspect_source(self, path: Path, language=None):
+        pair = language_pair(language)
+        book = None
         try:
-            for sheet in workbook.worksheets:
-                header = [text(cell.value).strip() for cell in sheet[1]]
-                source = next((i for i, name in enumerate(header)
-                               if name.casefold() in ('game_text_en', 'en')), None)
-                if source is None:
+            if path.suffix.lower() == '.csv':
+                with path.open(encoding='utf-8-sig', newline='') as file:
+                    sheets = [('csv', list(csv.reader(file)))]
+            else:
+                book = load_workbook(path, read_only=True, data_only=False)
+                sheets = [(sheet.title, list(sheet.iter_rows(values_only=True))) for sheet in book]
+            count, first, source_values = 0, None, []
+            for name, rows in sheets:
+                if not rows:
                     continue
-                count = 0
-                for row in sheet.iter_rows(min_row=2, values_only=True):
-                    if source < len(row) and text(row[source]).strip():
-                        count += 1
-                return count, header, sheet.title
-            raise ValueError('未找到 game_text_en 或 en 源文列')
+                headers = pair.headers(rows[0])
+                source = pair.column(headers, 'source')
+                if not source:
+                    continue
+                for role, mapped in pair.columns.items():
+                    if role != 'target' and mapped.casefold() not in headers:
+                        raise ValueError(f'{name} 缺少指定的 {role} 列：{mapped}')
+                if first is None:
+                    first = ([text(c).strip() for c in rows[0]], name)
+                values = [text(row[source - 1]).strip() for row in rows[1:] if len(row) >= source and text(row[source - 1]).strip()]
+                count += len(values)
+                source_values.extend(values)
+            if first is None or not count:
+                raise ValueError('未找到有效源文，请核对当前语向及源文列映射：' + ' / '.join(pair.aliases('source')))
+            if pair.chinese and all(v.casefold() in EMOTIONS for v in source_values):
+                raise ValueError('选择的中文源文列实际为情绪标记，请指定中文台词列')
+            return count, first[0], first[1]
         finally:
-            workbook.close()
+            if book:
+                book.close()
 
     # ------------------------------------------------------------ 执行
 
@@ -705,16 +722,22 @@ class PipelineService:
 
     def _project_term(self, project: dict):
         item = (project.get('library') or {}).get('termbase') or {}
+        if not item:
+            return None
         path = self._resolve(item.get('path'))
         if not path or not path.is_file():
-            raise PipelineError('请先在资料库上传术语库')
+            raise PipelineError('已登记的术语库文件不存在，请重新上传或移除该记录')
         return path
 
     def _project_tm(self, project: dict):
+        if not project.get('use_tm', True):
+            return None
         item = (project.get('library') or {}).get('tm') or {}
+        if not item:
+            return None
         path = self._resolve(item.get('path'))
         if not path or not path.is_file():
-            raise PipelineError('请先在资料库上传记忆库')
+            raise PipelineError('已登记的记忆库文件不存在，请重新上传或移除该记录')
         return path
 
     def _materials(self, project: dict) -> dict:
@@ -746,10 +769,12 @@ class PipelineService:
                 'context': {'reference': str(reference) if reference and reference.is_file() else None,
                             'guide': str(guide) if guide and guide.is_file() else None},
             },
-            'language': {'termbases': [str(term)], 'tms': [str(tm)]},
+            'language': {**language_pair(batch.get('language') or project).as_dict(),
+                         'termbases': [str(term)] if term else [], 'tms': [str(tm)] if tm else [],
+                         'use_tm': project.get('use_tm', True)},
             'materials': self._materials(project),
             'config_path': self.root / 'config/config.json',
-            'tm_cache_dir': self.workspace / 'tm_cache',
+            'tm_cache_dir': self.workspace / 'tm_cache' / language_pair(project).key,
             'batch_dir': str(self._batch_dir(project['id'], batch['id'])),
             'batch_name': batch.get('name', ''),
         }
@@ -779,7 +804,7 @@ class PipelineService:
             if mode == 'run' and any(stage.get('state') == 'review'
                                      for stage in batch['stages'].values()):
                 raise PipelineError('还有节点等待确认，请先确认')
-            # 先校验必需资料，错误直接返回，不启动线程。
+            # 已登记但丢失的文件仍须报错；未上传的库允许跳过。
             self._project_term(project)
             self._project_tm(project)
             key_rules = self._key_rules_path()
@@ -990,8 +1015,9 @@ class PipelineService:
                 self._save_batch(project_id, batch)
                 return
             summary = self._summarize(key, project_id, batch, key, task, source, output, seconds)
-            confirm = STAGE_BY_KEY[key]['confirm'] and not auto_confirm
+            confirm = STAGE_BY_KEY[key]['confirm'] and not auto_confirm and not task.get('skipped')
             stage.update(state='review' if confirm else 'done', progress=100,
+                         skipped=bool(task.get('skipped')),
                          message=message, status=message, seconds=seconds,
                          confirmed_at=None if confirm else now())
             stage.update(summary)
@@ -1012,9 +1038,15 @@ class PipelineService:
         except Exception:
             header, rows = [], []
         total = len(rows)
+        pair = language_pair(batch.get('language'))
+        if task.get('skipped'):
+            reason = task['skip_reason']
+            return {'stats': [['已跳过', total, ' 行']], 'desc': reason,
+                    'preview': {'type': 'code', 'cap': '未提供资料或未启用，已跳过', 'text': reason},
+                    'checks': [reason], 'review': []}
         if key == 'normalize':
             try:
-                source_rows = self._inspect_source(source)[0]
+                source_rows = self._inspect_source(source, pair)[0]
             except Exception:
                 source_rows = 0
             stats = [['输入行数', source_rows, ''], ['删除空列', task.get('trimmed_columns', 0), ''],
@@ -1022,9 +1054,9 @@ class PipelineService:
             sample = []
             for row in rows[:4]:
                 sample.append([text(column(row, 'limit')), text(column(row, 'key')),
-                               snippet(column(row, 'game_text_en'), 80), text(column(row, 'speaker'))])
+                               snippet(column(row, *pair.aliases('source')), 80), text(column(row, 'speaker'))])
             preview = {'type': 'table', 'cap': '产物前 4 行（新增 speaker 列）',
-                       'head': ['limit', 'key', 'game_text_en', 'speaker'], 'rows': sample}
+                       'head': ['limit', 'key', pair.aliases('source')[0], 'speaker'], 'rows': sample}
             return {'stats': stats, 'preview': preview}
         if key == 'classify':
             counts = task.get('counts', {})
@@ -1067,7 +1099,7 @@ class PipelineService:
             coverage = (len(hit) / total * 100) if total else 0
             stats = [['命中行数', len(hit), ''], ['命中术语', terms, ''], ['未命中', total - len(hit), ''],
                      ['覆盖率', f'{coverage:.1f}', '%']]
-            sample = [[snippet(column(row, 'game_text_en'), 50), snippet(column(row, '关联术语'), 80)]
+            sample = [[snippet(column(row, *pair.aliases('source')), 50), snippet(column(row, '关联术语'), 80)]
                       for row in hit[:4]]
             preview = {'type': 'table', 'cap': '命中样例（关联术语列）',
                        'head': ['源文片段', '关联术语'], 'rows': sample}
@@ -1083,18 +1115,24 @@ class PipelineService:
             ratio = (excluded_terms / considered * 100) if considered else 0
             stats = [['生效术语', active_terms, ''], ['无效术语', excluded_terms, ''],
                      ['判掉比例', f'{ratio:.1f}', '%'], ['耗时', f'{seconds:.1f}', 's']]
-            sample = [[snippet(column(row, 'game_text_en'), 50), snippet(column(row, '生效术语'), 55),
+            sample = [[snippet(column(row, *pair.aliases('source')), 50), snippet(column(row, '生效术语'), 55),
                        snippet(column(row, '无效术语'), 55)] for row in (active + excluded)[:4]]
             preview = {'type': 'table', 'cap': '筛选结果（两列分开存放）',
                        'head': ['源文片段', '生效术语', '无效术语'], 'rows': sample}
-            checks = [f'判掉 {excluded_terms} 个（{ratio:.1f}%），与历史经验值 14% 接近' if 7 <= ratio <= 21
-                      else f'判掉 {excluded_terms} 个（{ratio:.1f}%），请留意是否偏离经验值',
+            checks = [f'排除 {excluded_terms} 个（{ratio:.1f}%），请结合本批语境核对',
                       '抽 2 行看有没有把真术语判掉',
                       '若有整行候选全被判掉，需要回看原文']
             return {'stats': stats, 'preview': preview, 'checks': checks, 'review': checks}
         if key == 'tm':
             counts = task.get('counts', {})
             db = task.get('tm_db', {})
+            if db.get('enabled') is False:
+                checks = ['本项目已选择不使用 TM，参考列留空，未执行检索']
+                return {'stats': [['未使用 TM', counts.get('未使用', total), ' 行'],
+                                  ['待确认', counts.get('待确认', 0), ' 行']],
+                        'desc': '本项目不使用 TM，保留空的 TM参考 列供后续翻译使用。',
+                        'preview': {'type': 'code', 'cap': 'TM 未启用', 'text': checks[0]},
+                        'checks': checks, 'review': checks}
             stats = [['有参考', task.get('matched_count', 0), ' 行'],
                      ['原文一致', counts.get('原文一致', 0), ' 行'],
                      ['未命中', counts.get('未命中', 0), ' 行'],
@@ -1109,7 +1147,7 @@ class PipelineService:
             checks = [f'{exact} 行原文一致，仍需核对语境、术语和客户要求',
                       f'{matched - exact} 行有其他历史参考；语义相近不代表译文可直接照抄',
                       f'{counts.get("待确认", 0)} 行存在差异或冲突，请检查 TM参考 中的提示',
-                      '当前检索依据英文原句；Context、分类和生效术语由后续翻译环节结合判断']
+                      '当前检索依据源文原句；Context、分类和生效术语由后续翻译环节结合判断']
             return {'stats': stats, 'preview': preview, 'checks': checks, 'review': checks}
         return {'stats': [], 'preview': {}}
 

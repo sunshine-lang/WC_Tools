@@ -56,7 +56,7 @@ class DialogueContextTests(unittest.TestCase):
         line = payload['dialogue'][0]
         return {'scene_structure': '同组角色围绕一个问题展开连续对白。',
                 'situation_tone': '语气由提出问题转为回应，翻译时保留互动与情绪变化。',
-                'evidence': [{'key': line['key'], 'quote': line['english']}],
+                'evidence': [{'key': line['key'], 'quote': line['source_text']}],
                 'material_evidence': [], 'warnings': []}
 
     def run_scene(self, path, result=None):
@@ -174,7 +174,7 @@ class DialogueContextTests(unittest.TestCase):
 
     def test_analysis_validates_quotes_and_shows_uncertainty_outside_context(self):
         line = {'key': PREFIX + '3_1', 'speaker': 'Max_remote', 'emotion': 'thinking', 'bubble': '1',
-                'english': 'What should I say?', 'source': 'input.xlsx / 对白!2', 'group': 'forestconcert/dialogue/3'}
+                'source_text': 'What should I say?', 'source': 'input.xlsx / 对白!2', 'group': 'forestconcert/dialogue/3'}
         good = self.response({'dialogue': [line]})
         good['warnings'] = ['气泡字段与内心独白的解释存在冲突，请人工核对。']
         with patch.object(self.analyzer, '_request', return_value=good) as request:
@@ -212,7 +212,7 @@ class DialogueContextTests(unittest.TestCase):
             self.assertNotIn('DO_NOT_SEND', json.dumps(payload))
         self.assertEqual(len(task['dialogue_scenes'][0]['material_evidence']), 2)
         analyzer = DialogueContextAnalyzer(self.config, materials=materials)
-        line = dict(key='scene_1', speaker='Max', emotion='', bubble='', english='Hi', source='file', group='g')
+        line = dict(key='scene_1', speaker='Max', emotion='', bubble='', source_text='Hi', source='file', group='g')
         for bad in [{'material': 'cast', 'quote': '不存在的人设原文'},
                     {'material': 'missing', 'quote': '人物尾部依据。'}]:
             result = self.response({'dialogue': [line]}) | {'material_evidence': [bad]}
@@ -242,7 +242,7 @@ class DialogueContextTests(unittest.TestCase):
     def test_saved_response_is_revalidated_before_promotion_to_success_cache(self):
         value = '`Tadpole` 对应 `Krümel`。'
         analyzer = DialogueContextAnalyzer(self.config, materials={'relationships': value}, cache_dir=self.root / 'cache')
-        line = dict(key='scene_1', speaker='Max', emotion='', bubble='', english='Hi', group='g')
+        line = dict(key='scene_1', speaker='Max', emotion='', bubble='', source_text='Hi', group='g')
         response = self.response({'dialogue': [line]}) | {
             'material_evidence': [{'material': 'relationships', 'quote': 'Tadpole 对应 Krümel。'}]}
         with patch.object(analyzer, '_request', return_value=response), patch.object(analyzer, '_material_quote_matches', return_value=False):
@@ -254,7 +254,7 @@ class DialogueContextTests(unittest.TestCase):
         self.assertFalse(list((self.root / 'cache').glob('*.failed.json')))
 
     def test_transport_retries_transient_failures_and_rejects_auth_and_malformed_response(self):
-        payload = {'dialogue': [{'key': 'x', 'english': 'Hi'}]}
+        payload = {'dialogue': [{'key': 'x', 'source_text': 'Hi'}]}
         content = self.response(payload)
         response = Mock(status_code=200, json=lambda: {'choices': [{'message': {'content': json.dumps(content)}}]})
         with patch('core_tools.dialogue_context.requests.post', side_effect=[requests.Timeout('TEST_SECRET'),

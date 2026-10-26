@@ -14,8 +14,11 @@ from .key_classifier import EMOTIONS, KeyClassifier
 from .term_filter import FILTER_COLUMNS
 
 
-TM_POLICY = 'wc-en-de-local-v1'
-TM_STATUSES = ('原文一致', '相似参考', '未命中', '待确认')
+from .language import language_pair, source_tokens
+
+
+TM_POLICY = 'wc-pair-local-v2'
+TM_STATUSES = ('原文一致', '相似参考', '未命中', '待确认', '未使用')
 STOP_WORDS = set("a an the and or of to in on at for from with by as is are was were be been being it its this that these those i me my we our you your he him his she her they them their do does did have has had will would can could should shall may might must all some any just then than so very".split())
 
 
@@ -77,56 +80,67 @@ def normalized(text):
     return re.sub(r'\s+', ' ', visible_text(text)).strip().casefold().replace('’', "'")
 
 
-def tokens(text):
-    return set(re.findall(r"[^\W_]+(?:'[^\W_]+)?", normalized(text)))
+def tokens(text, chinese=False):
+    return set(source_tokens(normalized(text), chinese))
 
 
 def protected(text):
     return Counter(re.findall(r'\{\d+\}|%(?:\d+\$)?[sdf](?:%%)?|%\([^)]+\)[sdf]', text))
 
 
-def changed_fragments(current, candidate):
-    a, b = visible_text(current).split(), visible_text(candidate).split()
+def changed_fragments(current, candidate, chinese=False):
+    a, b = ((list(visible_text(current)), list(visible_text(candidate))) if chinese
+            else (visible_text(current).split(), visible_text(candidate).split()))
     return [{'current': ' '.join(a[i:j]), 'history': ' '.join(b[k:l])}
             for op, i, j, k, l in SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
             if op != 'equal']
 
 
-def differences(current, candidate, target):
+def differences(current, candidate, target, chinese=False):
     warnings = []
     if protected(current) != protected(candidate):
         warnings.append('当前原文与 TM 原文的参数不同')
     if protected(candidate) != protected(target):
-        warnings.append('历史英德译文的参数不一致')
+        warnings.append('历史双语句对的参数不一致')
     if Counter(re.findall(r'\d+(?:[.,]\d+)?', visible_text(current))) != Counter(re.findall(r'\d+(?:[.,]\d+)?', visible_text(candidate))):
         warnings.append('当前原文与 TM 原文的数值不同')
     tag_pattern = r'</?[A-Za-z][^>]*>'
     if Counter(re.findall(tag_pattern, current)) != Counter(re.findall(tag_pattern, candidate)):
         warnings.append('当前原文与 TM 原文的标签不同')
     if Counter(re.findall(tag_pattern, candidate)) != Counter(re.findall(tag_pattern, target)):
-        warnings.append('历史英德译文的标签不同')
+        warnings.append('历史双语句对的标签不同')
     if (current.count('\\n'), current.count('\n')) != (candidate.count('\\n'), candidate.count('\n')):
         warnings.append('当前原文与 TM 原文的换行不同')
     negative = lambda s: bool(re.search(r"\b(?:no|not|never|without)\b|n't\b", normalized(s)))
+    if chinese:
+        negative = lambda s: bool(re.search(r'不|没|未|无|別|别|勿|禁止', visible_text(s)))
     if negative(current) != negative(candidate):
         warnings.append('当前原文与 TM 原文的否定表达不同')
     return warnings
 
 
 class TMMatcher:
-    def __init__(self, tmx_path, source_name=None, *, semantic=False, config_path=None, cache_dir=None):
+    def __init__(self, tmx_path, source_name=None, *, semantic=False, config_path=None, cache_dir=None, language=None):
+        self.language = language_pair(language)
         # Library validation and offline comparisons stay local; the pipeline
         # explicitly enables semantic retrieval. A model failure never falls back.
         self.semantic = semantic
         self.config_path = config_path
         self.cache_dir = cache_dir
         self.retriever = None
+        self.filename = '未使用 TM'
+        self.sha256 = ''
+        self.tu_count = self.valid_count = self.skipped_count = 0
+        self.groups, self.clean, self.words = [], [], []
+        self.exact, self.text_index, self.word_index = {}, {}, {}
+        if tmx_path is None:
+            return
         path = Path(tmx_path)
         self.filename = source_name or path.name
         for name in (path.name, path.resolve().name, self.filename):
             validate_material_name(name)
         if path.suffix.lower() != '.tmx':
-            raise ValueError('请上传英德 TMX 文件')
+            raise ValueError('请上传当前语向的 TMX 文件')
         content = path.read_bytes()
         if re.search(br'<!\s*ENTITY\b|<!\s*DOCTYPE[^>]*\[', content.replace(b'\x00', b''), re.I):
             raise ValueError('TMX 不支持自定义实体或内部 DTD，请重新导出标准 TMX')
@@ -146,19 +160,20 @@ class TMMatcher:
                     continue
                 language = (tuv.get('{http://www.w3.org/XML/1998/namespace}lang') or tuv.get('lang') or '').lower().replace('_', '-')
                 base = language.split('-')[0]
-                if base not in ('en', 'de'):
+                side = 'source' if self.language.tm_language(language, source=True) else 'target' if self.language.tm_language(language) else None
+                if side is None:
                     continue
                 seg = next((s for s in tuv if local_name(s.tag) == 'seg'), None)
                 if seg is not None:
-                    languages[base].append((segment_text(seg), language, properties(tuv)))
-            if len(languages['en']) > 1 or len(languages['de']) > 1:
-                raise ValueError(f'TU {self.tu_count} 含多个英语或德语版本，请提供唯一英德语言对')
-            if not languages['en'] or not languages['de']:
+                    languages[side].append((segment_text(seg), language, properties(tuv)))
+            if len(languages['source']) > 1 or len(languages['target']) > 1:
+                raise ValueError(f'TU {self.tu_count} 含多个源语或目标语版本，请提供唯一语言对')
+            if not languages['source'] or not languages['target']:
                 self.skipped_count += 1
                 continue
-            english, en_lang, en_props = languages['en'][0]
-            german, de_lang, _ = languages['de'][0]
-            if not english.strip() or not german.strip():
+            source_text, en_lang, en_props = languages['source'][0]
+            target_text, de_lang, _ = languages['target'][0]
+            if not source_text.strip() or not target_text.strip():
                 self.skipped_count += 1
                 continue
             self.valid_count += 1
@@ -169,20 +184,20 @@ class TMMatcher:
                       'source_language': en_lang, 'target_language': de_lang,
                       'previous': context_text(en_props.get('x-context-pre', '')),
                       'next': context_text(en_props.get('x-context-post', ''))}
-            variants = groups.setdefault(english, {})
-            variants.setdefault(german, []).append(origin)
+            variants = groups.setdefault(source_text, {})
+            variants.setdefault(target_text, []).append(origin)
         if not groups:
-            raise ValueError('TMX 未找到有效英语→德语句对，请核对 en/de 语言与空白译文')
-        self.groups = [{'english': en, 'variants': [{'german': de, 'origins': origins} for de, origins in variants.items()]}
+            raise ValueError(f'TMX 未找到有效{self.language.name}句对，请核对语言代码及空白译文')
+        self.groups = [{'source_text': en, 'variants': [{'target_text': de, 'origins': origins} for de, origins in variants.items()]}
                        for en, variants in groups.items()]
-        self.exact = {g['english']: index for index, g in enumerate(self.groups)}
+        self.exact = {g['source_text']: index for index, g in enumerate(self.groups)}
         self.text_index = defaultdict(list)
         self.word_index = defaultdict(set)
         self.clean = []
         self.words = []
         for index, group in enumerate(self.groups):
-            clean = normalized(group['english'])
-            words = tokens(group['english']) - STOP_WORDS
+            clean = normalized(group['source_text'])
+            words = tokens(group['source_text'], self.language.chinese) - STOP_WORDS
             self.clean.append(clean)
             self.words.append(words)
             self.text_index[clean].append(index)
@@ -190,12 +205,12 @@ class TMMatcher:
                 self.word_index[word].add(index)
 
     def status(self):
-        return {'ready': True, 'filename': self.filename, 'sha256': self.sha256,
+        return {'ready': bool(self.groups), 'enabled': bool(self.groups), 'language': self.language.as_dict(), 'filename': self.filename, 'sha256': self.sha256,
                 'tu_count': self.tu_count, 'valid_count': self.valid_count,
                 'source_count': len(self.groups), 'pair_count': sum(len(g['variants']) for g in self.groups),
                 'conflict_count': sum(len(g['variants']) > 1 for g in self.groups),
                 'skipped_count': self.skipped_count,
-                'method': '精确匹配优先 + 语义向量/BM25召回 + 模型重排' if self.semantic else '英文完全匹配与文字相似匹配'}
+                'method': '精确匹配优先 + 语义向量/BM25召回 + 模型重排' if self.semantic else '源文完全匹配与文字相似匹配'}
 
     def _local_selection(self, text):
         if text in self.exact:
@@ -203,7 +218,7 @@ class TMMatcher:
         elif normalized(text) in self.text_index:
             selected = [(i, 1.0, '正文一致，格式或大小写有差异') for i in self.text_index[normalized(text)]]
         else:
-            query_words = tokens(text) - STOP_WORDS
+            query_words = tokens(text, self.language.chinese) - STOP_WORDS
             if len(query_words) < 2:
                 return []
             overlap = Counter(i for word in query_words for i in self.word_index.get(word, ()))
@@ -229,13 +244,13 @@ class TMMatcher:
         for index, score, kind in selected:
             group = self.groups[index]
             for variant in group['variants']:
-                warnings = differences(text, group['english'], variant['german'])
+                warnings = differences(text, group['source_text'], variant['target_text'], self.language.chinese)
                 if len(group['variants']) > 1:
-                    warnings.append(f"同一英文有 {len(group['variants'])} 种德语译法，需结合语境选择")
-                matches.append({'english': group['english'], 'german': variant['german'],
+                    warnings.append(f"同一源文有 {len(group['variants'])} 种目标语译法，需结合语境选择")
+                matches.append({'source_text': group['source_text'], 'target_text': variant['target_text'],
                                 'match_type': kind, 'score': round(score, 4),
                                 'origins': variant['origins'], 'warnings': warnings,
-                                'changes': changed_fragments(text, group['english'])})
+                                'changes': changed_fragments(text, group['source_text'], self.language.chinese)})
         return matches
 
     def find_matches(self, text):
@@ -257,7 +272,7 @@ class TMMatcher:
                 return results
             from .tm_semantic import SemanticTMRetriever
             if self.retriever is None:
-                self.retriever = SemanticTMRetriever(self.config_path, self.cache_dir)
+                self.retriever = SemanticTMRetriever(self.config_path, self.cache_dir, language=self.language)
             queries = list(dict.fromkeys(normalized(text) for text in pending))
             selected = self.retriever.search_many(queries, [self.clean[i] for i in source_indices], self.sha256, progress)
             for text in pending:
@@ -269,8 +284,8 @@ class TMMatcher:
         chunks = []
         for index, match in enumerate(matches, 1):
             # 单元格只留状态、原文、译文。来源与差异仍在 matches 里保留，供页面追溯。
-            lines = [f"[TM参考 {index}｜{match['match_type']}]", f"【英】{match['english']}",
-                     f"【德】{match['german']}"]
+            lines = [f"[TM参考 {index}｜{match['match_type']}]", f"【{self.language.labels[0]}】{match['source_text']}",
+                     f"【{self.language.labels[1]}】{match['target_text']}"]
             if match['warnings']:
                 lines.append('提示：' + '；'.join(match['warnings']))
             chunks.append('\n'.join(lines))
@@ -289,8 +304,8 @@ class TMMatcher:
             book = load_workbook(path)
             records = []
             for sheet in book:
-                headers = {str(c.value).strip().casefold(): c.column for c in sheet[1] if c.value is not None}
-                en_col = headers.get('game_text_en') or headers.get('en')
+                headers = self.language.headers(c.value for c in sheet[1])
+                en_col = self.language.column(headers, 'source')
                 if not en_col:
                     continue
                 required = {'分类', 'context', *FILTER_COLUMNS}
@@ -305,8 +320,8 @@ class TMMatcher:
                 header.fill = PatternFill('solid', fgColor='334155')
                 sheet.column_dimensions[header.column_letter].width = 90
 
-                def value(row, name):
-                    index = headers.get(name)
+                def value(row, *names):
+                    index = next((headers[n] for n in names if n in headers), None)
                     raw = sheet.cell(row, index).value if index else None
                     return '' if raw is None else str(raw)
 
@@ -314,24 +329,25 @@ class TMMatcher:
                     if not any(sheet.cell(row, c).value is not None for c in range(1, width + 1)):
                         continue
                     cell = sheet.cell(row, en_col)
-                    english = '' if cell.value is None else str(cell.value)
+                    source_text = '' if cell.value is None else str(cell.value)
                     warning = ''
-                    if cell.data_type == 'f' or not isinstance(cell.value, str) or not english.strip():
-                        warning = '英文源文为空、非文本或为公式，请核对源文'
-                    key, speaker = value(row, 'key'), value(row, 'speaker')
-                    emotion = value(row, 'game_text_cn') or value(row, 'cn')
+                    if cell.data_type == 'f' or not isinstance(cell.value, str) or not source_text.strip():
+                        warning = '源文为空、非文本或为公式，请核对源文'
+                    get = lambda *names: value(row, *names)
+                    key, speaker = self.language.value(get, 'key'), self.language.value(get, 'speaker')
+                    emotion = self.language.emotion(get)
                     if not speaker and emotion.strip().casefold() in EMOTIONS:
                         speaker, key = key, ''
                     records.append({'row': row, 'sheet': sheet.title, 'key': key, 'speaker': speaker,
-                                    'english': english, 'category': value(row, '分类'),
+                                    'source_text': source_text, 'category': value(row, '分类'),
                                     'warning': warning, '_column': col})
             if not records:
-                raise ValueError('未找到待处理记录，须包含英文源文和第四步术语筛选结果列')
-            references = self.find_many([r['english'] for r in records if not r['warning']],
+                raise ValueError('未找到待处理记录，须包含源文和第四步术语筛选结果列')
+            references = self.find_many([r['source_text'] for r in records if not r['warning']],
                                         lambda percent, message: task.update(progress=percent, status=message))
             for record in records:
-                matches = [] if record['warning'] else references[record['english']]
-                status = '未命中' if not matches else '原文一致' if any(m['match_type'] == '原文一致' for m in matches) else '相似参考'
+                matches = [] if record['warning'] else references[record['source_text']]
+                status = ('未使用' if not self.groups else '未命中') if not matches else '原文一致' if any(m['match_type'] == '原文一致' for m in matches) else '相似参考'
                 if any(m['warnings'] for m in matches):
                     record['warning'] = '候选有差异或历史译法冲突，请核对 TM参考 中的提示'
                 if record['warning']:
@@ -355,9 +371,11 @@ class TMMatcher:
                         counts={name: counts[name] for name in TM_STATUSES},
                         matched_count=sum(bool(r['matches']) for r in records),
                         result_file=str(output_path), tm_db=self.status(),
-                        tm_policy='wc-en-de-semantic-v1' if self.semantic else TM_POLICY,
+                        tm_policy='wc-pair-semantic-v2' if self.semantic else TM_POLICY,
                         retrieval=self.retriever.status() if self.retriever else {'exact_only': self.semantic},
                         status=f'匹配完成，共 {len(records)} 条；有参考 {sum(bool(r["matches"]) for r in records)} 条，待确认 {counts["待确认"]} 条')
+            if not self.groups:
+                task['status'] = f'已按项目设置跳过 TM 检索，{len(records)} 行参考列留空'
         except Exception as error:
             task.update(state='error', status=f'TM 匹配失败：{error}')
         finally:
