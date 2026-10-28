@@ -137,6 +137,7 @@ class DialogueContextAnalyzer:
                    'character_materials': self.materials_payload,
                    'input_warnings': [*input_warnings, *self.material_warnings]}
         identity = json.dumps({'policy': DIALOGUE_CONTEXT_POLICY, 'prompt': SYSTEM_PROMPT,
+                               'language_rules': self.language.cache_identity(),
                                'model': self.model, 'endpoint': self.api_url, 'payload': payload},
                               ensure_ascii=False, sort_keys=True)
         fingerprint = hashlib.sha256(identity.encode()).hexdigest()

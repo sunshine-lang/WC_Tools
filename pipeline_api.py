@@ -39,7 +39,7 @@ def bootstrap():
 def create_project():
     data = request.get_json(silent=True) or {}
     return _guard(lambda: service.create_project(
-        data.get('name', ''), data.get('src', 'en'), data.get('tgt', 'de'), data.get('use_tm', True)
+        data.get('name', ''), data.get('src'), data.get('tgt'), data.get('use_tm', True)
     ))
 
 

@@ -1,0 +1,29 @@
+{
+  "llm": {
+    "api_url": "",
+    "api_key": "",
+    "model_name": "",
+    "temperature": 0.1,
+    "max_workers": 5
+  },
+  "embedding": {
+    "api_url": "",
+    "api_key": "",
+    "model_name": "",
+    "batch_size": 10,
+    "max_workers": 5,
+    "timeout": 60
+  },
+  "rerank": {
+    "api_url": "",
+    "api_key": "",
+    "model_name": "",
+    "recall_k": 30,
+    "final_k": 5,
+    "threshold": 0.65,
+    "max_workers": 5,
+    "timeout": 30,
+    "request_retries": 3,
+    "retry_backoff": 2
+  }
+}

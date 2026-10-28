@@ -123,15 +123,15 @@ class LanguageSupportTests(unittest.TestCase):
         self.assertIn('【中】请修复城堡大门。', matcher.format_matches(match))
         self.assertIn('【英】Please repair', matcher.format_matches(match))
         self.assertTrue(matcher.find_matches('请修复城堡大门！'))
-        self.assertIn('当前原文与 TM 原文的否定表达不同', differences('不要开门', '请开门', 'Open it', True))
+        self.assertIn('当前原文与 TM 原文的否定表达不同', differences('不要开门', '请开门', 'Open it', ZH))
         with self.assertRaisesRegex(ValueError, '美式英语'):
             TMMatcher(self.memory('en-GB', 'british.tmx'), language=ZH)
         with self.assertRaisesRegex(ValueError, '英语→德语'):
             TMMatcher(self.tmx)
 
     def test_chinese_tokens_and_language_scoped_embedding_cache(self):
-        self.assertIn('城堡', source_tokens('修复城堡大门', True))
-        self.assertIn('vip', source_tokens('获得VIP奖励', True))
+        self.assertIn('城堡', source_tokens('修复城堡大门', 'han'))
+        self.assertIn('vip', source_tokens('获得VIP奖励', 'han'))
         with patch.object(SemanticTMRetriever, 'embed', return_value=__import__('numpy').array([[1., .5]])) as embed:
             one = SemanticTMRetriever(self.config, self.root / 'cache', language=ZH)
             one.prepare(['同一句'], 'same-tmx')

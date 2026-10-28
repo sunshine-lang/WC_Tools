@@ -10,11 +10,11 @@ from __future__ import annotations
 import re
 import argparse
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).resolve().parent
-BASE = ROOT / 'base.md'
-SCENES = ROOT / 'scenes'
-DIST = ROOT / 'dist'
+sys.path.insert(0, str(ROOT.parent))
+from core_tools.language import language_profiles, prompt_locations
 
 
 def metadata(text: str, name: str) -> str:
@@ -31,12 +31,13 @@ def block(text: str, name: str) -> str:
     return match.group(1).strip()
 
 
-def main() -> int:
+def main(argv=None) -> int:
+    profiles = language_profiles()
     parser = argparse.ArgumentParser(description='生成各场景的完整翻译提示词')
-    parser.add_argument('--lang', choices=('en-de', 'zh-en-US'), default='en-de')
-    args = parser.parse_args()
-    source = ROOT / 'zh-en-US' if args.lang == 'zh-en-US' else ROOT
-    destination = DIST / 'zh-en-US' if args.lang == 'zh-en-US' else DIST
+    parser.add_argument('--lang', choices=tuple(profiles),
+                        default=next(key for key, profile in profiles.items() if profile['default']))
+    args = parser.parse_args(argv)
+    source, destination = prompt_locations(profiles[args.lang], ROOT)
     base = (source / 'base.md').read_text('utf-8')
     destination.mkdir(exist_ok=True, parents=True)
     scenes = sorted((source / 'scenes').glob('*.md'))
@@ -63,9 +64,11 @@ def main() -> int:
             raise ValueError(f'{scene_path.name}: unresolved placeholders: {missing}')
 
         output_name = metadata(scene, 'OUTPUT')
+        if Path(output_name).name != output_name or not output_name.endswith('.md'):
+            raise ValueError('OUTPUT 必须是当前输出目录下的 Markdown 文件名')
         output = destination / output_name
         output.write_text(text.rstrip() + '\n', 'utf-8')
-        print(f'{scene_path.name} -> {output.relative_to(ROOT)} ({len(text)} chars)')
+        print(f'{scene_path.name} -> {output.relative_to(ROOT.resolve())} ({len(text)} chars)')
 
     return 0
 

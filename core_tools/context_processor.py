@@ -21,6 +21,7 @@ CONTEXT_POLICY = 'wc-ui-compact-v2'
 STATUSES = ('已关联', '缺资料', '待确认')
 DIALOGUE_KEY = re.compile(r'mdnew_(.+)_mdnew_decoration_(intro|\d+)_(\d+)', re.IGNORECASE)
 STORY_KEY = re.compile(r'(story\d+(?:_\d+)?_(?:begin|end|task)|fire\d+)_(\d+)', re.IGNORECASE)
+FORESTCONCERT_CLUE_WORDS = {'en': ('treble', 'treble clef'), 'zh-CN': ('高音谱号', '高音谱号')}
 
 
 def text(value):
@@ -100,7 +101,8 @@ class ContextProcessor:
                 key = pair.value(get, 'key').strip()
                 speaker = pair.value(get, 'speaker').strip()
                 emotion = pair.emotion(get).strip()
-                chinese = '' if pair.chinese else value(row, 'game_text_cn', 'cn')
+                legacy_columns = pair.source_rules['legacy_emotion_columns']
+                chinese = value(row, *legacy_columns) if legacy_columns else ''
                 note = pair.value(get, 'note')
                 if not speaker and chinese.strip().casefold() in EMOTIONS and re.fullmatch(r"[A-Za-z][A-Za-z .'-]{0,60}", key):
                     speaker, emotion, chinese = key, chinese.strip(), ''
@@ -350,9 +352,8 @@ class ContextProcessor:
             # 只引用上传文件内已核对的前段线索，不用模型补写。
             prior = [r for r in activities.get(effective['activity'], [])
                      if r['key'] == 'mdnew_forestconcert_mdnew_decoration_5_10']
-            keyword = '高音谱号' if self.language.chinese else 'treble clef'
-            mention = '高音谱号' if self.language.chinese else 'treble'
-            if any(mention in r['source_text'].casefold() for r in selected) and prior and keyword in prior[0]['source_text'].casefold():
+            mention, keyword = FORESTCONCERT_CLUE_WORDS.get(self.language.source_lang, ('', ''))
+            if mention and any(mention in r['source_text'].casefold() for r in selected) and prior and keyword in prior[0]['source_text'].casefold():
                 selected.extend(prior)
             else:
                 warnings.append('未找到或无法验证第5段的高音谱号解释')

@@ -28,8 +28,8 @@ SEMANTIC_POLICY = 'wc-pair-semantic-v2'
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def word_tokens(text, chinese=False):
-    return source_tokens(text, chinese)
+def word_tokens(text, strategy='english'):
+    return source_tokens(text, strategy)
 
 
 class SemanticTMRetriever:
@@ -147,7 +147,7 @@ class SemanticTMRetriever:
         return self._vectors(np.concatenate(matrices), len(texts))
 
     def prepare(self, sources, tm_hash, progress=None):
-        identity = {'policy': SEMANTIC_POLICY, 'language': self.language.key, 'tm_sha256': tm_hash,
+        identity = {'policy': SEMANTIC_POLICY, 'language': self.language.cache_identity(), 'tm_sha256': tm_hash,
                     'sources_sha256': hashlib.sha256(json.dumps(sources, ensure_ascii=False).encode()).hexdigest(),
                     'model': self.embedding['model_name'],
                     'endpoint_sha256': hashlib.sha256(self.embedding['api_url'].encode()).hexdigest()}
@@ -179,7 +179,7 @@ class SemanticTMRetriever:
         self.vectors = (matrix / norms).astype(np.float32)
         self._fingerprint = fingerprint
         self.sources = sources
-        tokenized = [word_tokens(s, self.language.chinese) for s in sources]
+        tokenized = [word_tokens(s, self.language.source_rules['strategy']) for s in sources]
         self.bm25 = BM25Okapi(tokenized) if any(tokenized) else None
 
     def rerank(self, query, documents):
@@ -207,9 +207,9 @@ class SemanticTMRetriever:
         if vector.shape[0] != self.vectors.shape[1]:
             raise ValueError('查询与记忆库向量维度不一致，请更换模型后重新生成缓存')
         semantic = self.vectors @ (vector / np.linalg.norm(vector.astype(np.float64)))
-        lexical = self.bm25.get_scores(word_tokens(query, self.language.chinese)) if self.bm25 else np.zeros(len(self.sources))
+        lexical = self.bm25.get_scores(word_tokens(query, self.language.source_rules['strategy'])) if self.bm25 else np.zeros(len(self.sources))
         maximum = float(np.max(lexical))
-        lexical = lexical / maximum if maximum > (0 if self.language.chinese else 5.0) else np.zeros_like(lexical)
+        lexical = lexical / maximum if maximum > self.language.source_rules['bm25_floor'] else np.zeros_like(lexical)
         hybrid = 0.7 * semantic + 0.3 * lexical
         indices = np.argsort(-hybrid, kind='stable')[:self.recall_k].tolist()
         scores = self.rerank(query, [self.sources[i] for i in indices])

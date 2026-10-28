@@ -90,6 +90,8 @@ prompts/
 
 中译英维护在 `zh-en-US/base.md` 与 `zh-en-US/scenes/`，运行 `python prompts/build.py --lang zh-en-US` 生成 `dist/zh-en-US/` 下四份可独立交给 Agent 的完整提示词。每份包含共同规则与场景规则，不需要同时附加 base。
 
+生成脚本的语向选项与工作台、准备命令行共用 `profiles/language/` 的登记清单。各语向 JSON 的 `prompt_source`、`prompt_output` 决定源目录与输出目录，均相对本目录；默认语向来自 `_catalog.json`。扩展时先准备对应源文件，再登记语向，不能靠复制文件名把旧目标语 Prompt 当作新语种规则。详见[语向配置与扩展](../README.md#语向配置与扩展)。平台继续只导出 ready，不新增 Prompt 管理或下载接口。
+
 本版本源文为中文、目标为 en-US，默认指定范围全量重译。沿用两段式 Context，但判断与引用以中文原文为准；术语和 TM 必须来自中英语向，资料库中的人物全文仍作为独立材料提供。ready 只完成准备，不代表英文已翻译。客户通用要求已内化，新增英文专属要求需按实际适用范围补充。
 
 原英德提示词与构建命令保持：`python prompts/build.py`。

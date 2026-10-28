@@ -15,7 +15,7 @@ import json
 import sys
 import time
 import traceback
-from core_tools.language import language_pair
+from core_tools.language import language_pair, language_profile, language_profiles
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -170,10 +170,8 @@ STAGES = (
 class Pipeline:
     def __init__(self, game: str, language: str, batch: str):
         self.game = json.loads((ROOT / 'profiles' / 'game' / f'{game}.json').read_text('utf-8'))
-        self.language_name = language
-        self.language = json.loads(
-            (ROOT / 'profiles' / 'language' / f'{language}.json').read_text('utf-8')
-        )
+        self.language = language_profile(language)
+        self.language_name = self.language['key']
         self.batch = batch
         self.dir = WORKSPACE / batch
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -234,7 +232,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='翻译前准备流水线')
     parser.add_argument('source', help='待译文件（xlsx/csv）')
     parser.add_argument('--game', default='wc')
-    parser.add_argument('--lang', default='en-de')
+    profiles = language_profiles()
+    parser.add_argument('--lang', choices=tuple(profiles),
+                        default=next(key for key, profile in profiles.items() if profile['default']))
     parser.add_argument('--termbase', help='当前语向术语库路径')
     tm_options = parser.add_mutually_exclusive_group()
     tm_options.add_argument('--tm', help='当前语向 TMX 路径')

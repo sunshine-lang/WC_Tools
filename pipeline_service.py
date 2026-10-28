@@ -27,7 +27,7 @@ from openpyxl import load_workbook
 
 from core_tools.term_filter import TermFilter
 from core_tools.term_scanner import TermScanner
-from core_tools.language import language_pair, EMOTIONS
+from core_tools.language import language_pair, supported_language_pairs, EMOTIONS
 from core_tools.text_metrics import display_length
 from core_tools.tm_matcher import TMMatcher
 from core_tools.tm_semantic import SemanticTMRetriever
@@ -229,11 +229,12 @@ class PipelineService:
             'world': self._text_item(world) if world.is_file() else None,
             'style': self._text_item(style) if style.is_file() else None,
         }
+        pair = language_pair()
         project = {
             'id': 'wc',
             'name': '听风城堡',
-            'src': 'en',
-            'tgt': 'de',
+            'src': pair.source_lang,
+            'tgt': pair.target_lang,
             'game': 'wc',
             'created_at': now(),
             'library': library,
@@ -367,6 +368,7 @@ class PipelineService:
             if batch_state:
                 self._merge_runtime(batch_state)
             return {
+                'language_pairs': supported_language_pairs(),
                 'projects': self._project_list(store, project['id']),
                 'project': self._project_view(project),
                 'stage_defs': [{key: stage[key] for key in
@@ -377,7 +379,7 @@ class PipelineService:
                 'server': self._server_status(),
             }
 
-    def create_project(self, name: str, src: str = 'en', tgt: str = 'de', use_tm: bool = True) -> dict:
+    def create_project(self, name: str, src: str | None = None, tgt: str | None = None, use_tm: bool = True) -> dict:
         name = text(name).strip()
         if not name:
             raise PipelineError('请填写项目名称')
@@ -692,8 +694,8 @@ class PipelineService:
                 source_values.extend(values)
             if first is None or not count:
                 raise ValueError('未找到有效源文，请核对当前语向及源文列映射：' + ' / '.join(pair.aliases('source')))
-            if pair.chinese and all(v.casefold() in EMOTIONS for v in source_values):
-                raise ValueError('选择的中文源文列实际为情绪标记，请指定中文台词列')
+            if pair.source_rules['reject_emotion_only_source'] and all(v.casefold() in EMOTIONS for v in source_values):
+                raise ValueError(f"选择的{pair.source_rules['name']}源文列实际为情绪标记，请指定台词列")
             return count, first[0], first[1]
         finally:
             if book:
@@ -1038,7 +1040,7 @@ class PipelineService:
         except Exception:
             header, rows = [], []
         total = len(rows)
-        pair = language_pair(batch.get('language'))
+        pair = language_pair(batch.get('language') or self._project(self._read_store(), project_id))
         if task.get('skipped'):
             reason = task['skip_reason']
             return {'stats': [['已跳过', total, ' 行']], 'desc': reason,

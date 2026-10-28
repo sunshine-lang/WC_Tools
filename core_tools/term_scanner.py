@@ -94,7 +94,7 @@ class TermScanner:
                 table = csv.reader(StringIO(contents.decode('utf-8-sig')), strict=True)
                 columns = self.language.term_columns(next(table, []))
                 if None in columns:
-                    raise ValueError('术语 CSV 须在首行提供当前语向表头（EN/DE 或 ZH/EN）')
+                    raise ValueError(f'术语 CSV 须在首行提供当前语向表头（{self.language.name}）')
                 for number, row in enumerate(table, 2):
                     if not row:
                         continue
@@ -104,23 +104,24 @@ class TermScanner:
                 raise ValueError('请将术语 CSV 保存为 UTF-8 编码后上传') from error
         self.terms = list(by_english.values())
         if not self.terms:
-            raise ValueError('术语库未找到有效 ' + ('ZH／EN' if self.language.chinese else 'EN／DE') + ' 词条，请检查首行表头')
+            raise ValueError(f'术语库未找到有效 {self.language.name} 词条，请检查首行表头')
 
         self.conflict_count = sum(len(term['target_text']) > 1 for term in self.terms)
         self.patterns = []
+        strategy = self.language.source_rules['strategy']
         for index, term in enumerate(self.terms):
             words = normalized(term['source_text']).split()
             forms = [(' '.join(words), '原词')]
             last = words[-1].casefold()
-            for singular, plural in ({} if self.language.chinese else NOUN_PLURALS).items():
+            for singular, plural in (NOUN_PLURALS if strategy == 'english' else {}).items():
                 if last in (singular, plural):
                     alternate = plural if last == singular else singular
                     forms.append((' '.join([*words[:-1], alternate]), '词形'))
                     break
             for form, kind in forms:
                 body = r'\s+'.join(re.escape(word) for word in form.split())
-                left = '' if self.language.chinese and re.match(HAN, form[0]) else (r'(?<![A-Za-z0-9_])' if self.language.chinese else r'(?<!\w)')
-                right = '' if self.language.chinese and re.match(HAN, form[-1]) else (r'(?![A-Za-z0-9_])' if self.language.chinese else r'(?!\w)')
+                left = '' if strategy == 'han' and re.match(HAN, form[0]) else (r'(?<![A-Za-z0-9_])' if strategy == 'han' else r'(?<!\w)')
+                right = '' if strategy == 'han' and re.match(HAN, form[-1]) else (r'(?![A-Za-z0-9_])' if strategy == 'han' else r'(?!\w)')
                 self.patterns.append((index, kind, re.compile(left + body + right, re.IGNORECASE)))
 
     def status(self):

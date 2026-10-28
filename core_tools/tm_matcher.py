@@ -19,7 +19,6 @@ from .language import language_pair, source_tokens
 
 TM_POLICY = 'wc-pair-local-v2'
 TM_STATUSES = ('原文一致', '相似参考', '未命中', '待确认', '未使用')
-STOP_WORDS = set("a an the and or of to in on at for from with by as is are was were be been being it its this that these those i me my we our you your he him his she her they them their do does did have has had will would can could should shall may might must all some any just then than so very".split())
 
 
 def local_name(tag):
@@ -80,23 +79,23 @@ def normalized(text):
     return re.sub(r'\s+', ' ', visible_text(text)).strip().casefold().replace('’', "'")
 
 
-def tokens(text, chinese=False):
-    return set(source_tokens(normalized(text), chinese))
+def tokens(text, strategy='english'):
+    return set(source_tokens(normalized(text), strategy))
 
 
 def protected(text):
     return Counter(re.findall(r'\{\d+\}|%(?:\d+\$)?[sdf](?:%%)?|%\([^)]+\)[sdf]', text))
 
 
-def changed_fragments(current, candidate, chinese=False):
-    a, b = ((list(visible_text(current)), list(visible_text(candidate))) if chinese
+def changed_fragments(current, candidate, strategy='english'):
+    a, b = ((list(visible_text(current)), list(visible_text(candidate))) if strategy == 'han'
             else (visible_text(current).split(), visible_text(candidate).split()))
     return [{'current': ' '.join(a[i:j]), 'history': ' '.join(b[k:l])}
             for op, i, j, k, l in SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
             if op != 'equal']
 
 
-def differences(current, candidate, target, chinese=False):
+def differences(current, candidate, target, language=None):
     warnings = []
     if protected(current) != protected(candidate):
         warnings.append('当前原文与 TM 原文的参数不同')
@@ -111,9 +110,8 @@ def differences(current, candidate, target, chinese=False):
         warnings.append('历史双语句对的标签不同')
     if (current.count('\\n'), current.count('\n')) != (candidate.count('\\n'), candidate.count('\n')):
         warnings.append('当前原文与 TM 原文的换行不同')
-    negative = lambda s: bool(re.search(r"\b(?:no|not|never|without)\b|n't\b", normalized(s)))
-    if chinese:
-        negative = lambda s: bool(re.search(r'不|没|未|无|別|别|勿|禁止', visible_text(s)))
+    pattern = language_pair(language).source_rules['negative_pattern']
+    negative = lambda s: bool(pattern and re.search(pattern, normalized(s)))
     if negative(current) != negative(candidate):
         warnings.append('当前原文与 TM 原文的否定表达不同')
     return warnings
@@ -122,6 +120,7 @@ def differences(current, candidate, target, chinese=False):
 class TMMatcher:
     def __init__(self, tmx_path, source_name=None, *, semantic=False, config_path=None, cache_dir=None, language=None):
         self.language = language_pair(language)
+        self.stop_words = set(self.language.source_rules['stop_words'].split())
         # Library validation and offline comparisons stay local; the pipeline
         # explicitly enables semantic retrieval. A model failure never falls back.
         self.semantic = semantic
@@ -197,7 +196,7 @@ class TMMatcher:
         self.words = []
         for index, group in enumerate(self.groups):
             clean = normalized(group['source_text'])
-            words = tokens(group['source_text'], self.language.chinese) - STOP_WORDS
+            words = tokens(group['source_text'], self.language.source_rules['strategy']) - self.stop_words
             self.clean.append(clean)
             self.words.append(words)
             self.text_index[clean].append(index)
@@ -218,7 +217,7 @@ class TMMatcher:
         elif normalized(text) in self.text_index:
             selected = [(i, 1.0, '正文一致，格式或大小写有差异') for i in self.text_index[normalized(text)]]
         else:
-            query_words = tokens(text, self.language.chinese) - STOP_WORDS
+            query_words = tokens(text, self.language.source_rules['strategy']) - self.stop_words
             if len(query_words) < 2:
                 return []
             overlap = Counter(i for word in query_words for i in self.word_index.get(word, ()))
@@ -244,13 +243,13 @@ class TMMatcher:
         for index, score, kind in selected:
             group = self.groups[index]
             for variant in group['variants']:
-                warnings = differences(text, group['source_text'], variant['target_text'], self.language.chinese)
+                warnings = differences(text, group['source_text'], variant['target_text'], self.language)
                 if len(group['variants']) > 1:
                     warnings.append(f"同一源文有 {len(group['variants'])} 种目标语译法，需结合语境选择")
                 matches.append({'source_text': group['source_text'], 'target_text': variant['target_text'],
                                 'match_type': kind, 'score': round(score, 4),
                                 'origins': variant['origins'], 'warnings': warnings,
-                                'changes': changed_fragments(text, group['source_text'], self.language.chinese)})
+                                'changes': changed_fragments(text, group['source_text'], self.language.source_rules['strategy'])})
         return matches
 
     def find_matches(self, text):

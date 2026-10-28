@@ -2,6 +2,8 @@
   "source_lang": "zh-CN",
   "target_lang": "en-US",
   "columns": {},
+  "prompt_source": "zh-en-US",
+  "prompt_output": "dist/zh-en-US",
   "termbases": [],
   "tms": [],
   "use_tm": true

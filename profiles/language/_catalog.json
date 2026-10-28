@@ -1,0 +1,59 @@
+{
+  "default_pair": "en-de",
+  "sources": {
+    "en": {
+      "name": "英语",
+      "label": "英",
+      "aliases": ["en", "en-US"],
+      "columns": ["game_text_en", "en"],
+      "term_columns": ["en", "en-US"],
+      "tm_codes": ["en"],
+      "tm_prefixes": ["en"],
+      "strategy": "english",
+      "bm25_floor": 5.0,
+      "stop_words": "a an the and or of to in on at for from with by as is are was were be been being it its this that these those i me my we our you your he him his she her they them their do does did have has had will would can could should shall may might must all some any just then than so very",
+      "negative_pattern": "\\b(?:no|not|never|without)\\b|n't\\b",
+      "legacy_emotion_columns": ["game_text_cn", "cn"],
+      "reject_emotion_only_source": false,
+      "term_guidance": "核对英文多义词与词性。例如 major/minor key 是音乐调性，harp case 是琴盒，key detail 中 key 是形容词；不能套用实体钥匙或案件的目标译法。"
+    },
+    "zh-CN": {
+      "name": "简体中文",
+      "label": "中",
+      "aliases": ["zh", "zh-CN", "zh-Hans", "cn"],
+      "columns": ["game_text_cn", "game_text_zh", "zh", "cn", "source_text", "中文"],
+      "term_columns": ["zh", "zh-CN", "zh-Hans", "cn", "中文"],
+      "tm_codes": ["zh", "zh-CN", "zh-Hans", "zh-Hans-CN"],
+      "tm_prefixes": [],
+      "strategy": "han",
+      "bm25_floor": 0.0,
+      "stop_words": "",
+      "negative_pattern": "不|没|未|无|別|别|勿|禁止",
+      "legacy_emotion_columns": [],
+      "reject_emotion_only_source": true,
+      "term_guidance": "核对中文连续文本中的假命中与词性。例如“行”在“这样不行”中表示可行性，“花”在“花费金币”中是动词，不能套用行列或花朵含义的目标译法。"
+    }
+  },
+  "targets": {
+    "de": {
+      "name": "德语",
+      "label": "德",
+      "aliases": ["de", "de-DE"],
+      "columns": ["game_text_de", "de"],
+      "term_columns": ["de", "de-DE"],
+      "tm_codes": ["de"],
+      "tm_prefixes": ["de"],
+      "term_guidance": "允许德语格、数、冠词和词形随句子变化；不能因此排除词义相符的候选，也不能擅改锁定名称。"
+    },
+    "en-US": {
+      "name": "美式英语（en-US）",
+      "label": "英",
+      "aliases": ["en", "en-US"],
+      "columns": ["game_text_en", "en", "target_text", "英文"],
+      "term_columns": ["en-US", "en", "英文"],
+      "tm_codes": ["en", "en-US"],
+      "tm_prefixes": [],
+      "term_guidance": "按美式英语（en-US）判断候选，允许必要的英文单复数、时态和冠词变化；不能擅改锁定名称，不把其他地区英语自动视为已批准的美式用法。"
+    }
+  }
+}

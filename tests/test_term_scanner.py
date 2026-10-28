@@ -70,7 +70,7 @@ class TermScannerTests(unittest.TestCase):
 
     def test_requires_english_german_text_and_skips_deleted_terms(self):
         self.save_terms([['中文', 'English']], ['cn', 'en'])
-        with self.assertRaisesRegex(ValueError, 'EN／DE'):
+        with self.assertRaisesRegex(ValueError, '英语→德语'):
             TermScanner(self.tb)
         for row in [['key', None], ['key', '=1+1'], ['key', 42]]:
             self.save_terms([row])

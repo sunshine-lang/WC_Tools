@@ -329,10 +329,10 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
     <div class="field">
       <label>语言对</label>
       <div class="two">
-        <select id="npSrc" aria-label="源语言"><option value="en">英语</option><option value="zh-CN">简体中文</option></select>
-        <select id="npTgt" aria-label="目标语言"><option value="de">德语</option></select>
+        <select id="npSrc" aria-label="源语言"></select>
+        <select id="npTgt" aria-label="目标语言"></select>
       </div>
-      <div class="field-note">支持英语→德语、简体中文→美式英语。项目创建后语向固定，批次独立保存。</div>
+      <div class="field-note">选择本项目使用的语言对。项目创建后语向固定，批次独立保存。</div>
     </div>
     <div class="field-note">资料均为选填；上传后使用对应资料，未上传的术语库和记忆库会自动跳过。</div>
     <div class="warning">项目、资料库和批次都会保存到 workspace/pipeline，切换项目不会清空已有批次。</div>
@@ -368,7 +368,7 @@ const logEl = $('log');
 
 const state = {
   view:'batch',
-  project:null, projects:[], library:[], server:{},
+  project:null, projects:[], library:[], server:{}, languagePairs:[],
   batch:null, batches:[], stages:[], stageDefs:[],
   activeIndex:-1, follow:true, busy:false,
   pollTimer:null, pendingLibSlot:null,
@@ -467,6 +467,8 @@ function applyBootstrap(data, initial=false){
 
   state.projects = data.projects || [];
   state.project = data.project || null;
+  state.languagePairs = data.language_pairs || [];
+  renderLanguageOptions();
   state.stageDefs = data.stage_defs || state.stageDefs;
   state.library = state.project?.library || [];
   state.batches = data.batches || [];
@@ -628,10 +630,12 @@ function render(){
 
 function renderUpload(){
   const ready = state.library.filter(x=>x.ready).length;
+  const pair = state.languagePairs.find(p=>p.source_lang === state.project?.src && p.target_lang === state.project?.tgt);
+  const mappingHint = pair ? `默认${pair.source_name}源文 ${pair.source_column}，${pair.target_name}目标 ${pair.target_column}。情绪从 ${pair.emotion_columns.join(' / ')} 读取。${pair.legacy_emotion_columns.length ? '兼容旧表的已知情绪标记。' : '源文列不会作为情绪。'}` : '请根据文件实际表头填写列映射。';
   $('view').innerHTML = `
     <details style="margin-bottom:18px" open>
       <summary>文件列映射（标准表头可留空）</summary>
-      <p class="field-note">${state.project?.src === 'zh-CN' ? '默认中文源文 game_text_cn，英文目标 game_text_en。情绪从 animation / emotion 读取，中文列不会作为情绪。' : '默认英文源文 game_text_en，德语目标 game_text_de；兼容旧表的中文列情绪标记。'} 目标列不存在时补空列。</p>
+      <p class="field-note">${esc(mappingHint)} 目标列不存在时补空列。</p>
       <div class="two">${[['source','源文列'],['target','目标列'],['key','Key 列'],['note','完整 Key / 备注列'],['speaker','说话人列'],['emotion','情绪列'],['bubble','气泡类型列'],['limit','长度限制列']].map(([role,label])=>`<div class="field"><label for="map_${role}">${label}</label><input id="map_${role}" data-column-role="${role}" placeholder="自动识别"></div>`).join('')}</div>
     </details>
     <div class="dropzone" id="dropzone">
@@ -1109,6 +1113,24 @@ function openProject(){
 }
 function closeProject(){ $('projMask').classList.remove('show'); }
 
+function renderLanguageOptions(){
+  const source = $('npSrc');
+  const previous = source.value;
+  const sources = [...new Map(state.languagePairs.map(p=>[p.source_lang, p.source_name]))];
+  source.innerHTML = sources.map(([code,name])=>`<option value="${esc(code)}">${esc(name)}</option>`).join('');
+  source.value = sources.some(([code])=>code === previous) ? previous
+    : (state.languagePairs.find(p=>p.default) || state.languagePairs[0])?.source_lang || '';
+  renderTargetOptions();
+}
+
+function renderTargetOptions(){
+  const target = $('npTgt');
+  const previous = target.value;
+  const pairs = state.languagePairs.filter(p=>p.source_lang === $('npSrc').value);
+  target.innerHTML = pairs.map(p=>`<option value="${esc(p.target_lang)}">${esc(p.target_name)}</option>`).join('');
+  if(pairs.some(p=>p.target_lang === previous)) target.value = previous;
+}
+
 function renderProjects(){
   $('projectList').innerHTML = state.projects.length
     ? state.projects.map(p=>`
@@ -1123,6 +1145,7 @@ function renderProjects(){
 async function createProject(){
   const name = $('npName').value.trim();
   if(!name){ toast('请填写项目名称'); return; }
+  if(!$('npSrc').value || !$('npTgt').value){ toast('没有可用语言对，请检查语向配置'); return; }
   try {
     const data = await api('/api/pipeline/projects', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -1163,7 +1186,7 @@ async function activateBatch(batchId){
 }
 
 /* ------------------------------------------------------------------ 绑定 */
-$('npSrc').onchange = ()=>{ $('npTgt').innerHTML = $('npSrc').value === 'zh-CN' ? '<option value="en-US">美式英语（en-US）</option>' : '<option value="de">德语</option>'; };
+$('npSrc').onchange = renderTargetOptions;
 $('libBtn').onclick = goLibrary;
 $('backBtn').onclick = goBatch;
 $('projBtn').onclick = openProject;
