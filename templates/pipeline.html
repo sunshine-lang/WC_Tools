@@ -26,6 +26,7 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .sidebar{width:300px; flex:0 0 300px; background:var(--sidebar); color:#e2e8f0; display:flex; flex-direction:column; overflow-y:auto}
 .brand{padding:20px 22px 16px; border-bottom:1px solid rgba(255,255,255,.06)}
 .brand h1{margin:0; font-size:16px; letter-spacing:.04em; color:#fff}
+.brand .new-project{display:flex; align-items:center; justify-content:center; gap:8px; width:100%; margin-top:14px}
 
 .batch{margin:16px 16px 8px; padding:12px 14px; border-radius:10px; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.07)}
 .batch .name{font-size:12px; color:#cbd5e1; word-break:break-all; line-height:1.45}
@@ -59,14 +60,10 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 
 /* main */
 .main{flex:1; display:flex; flex-direction:column; min-width:0}
-.topbar{height:64px; flex:0 0 64px; background:var(--card); border-bottom:1px solid var(--line);
-  display:flex; align-items:center; gap:14px; padding:0 22px}
-.proj{display:flex; align-items:center; gap:8px; padding:6px 10px; border:1px solid var(--line); border-radius:9px; cursor:pointer; background:#fff}
-.proj:hover{border-color:#cbd5e1}
-.proj.disabled{opacity:.5; pointer-events:none}
-.proj .n{font-size:13px; color:var(--head); font-weight:600}
-.proj .l{font-size:11px; color:var(--muted)}
-.topbar h2{margin:0 0 0 6px; font-size:14px; color:var(--head); font-weight:600}
+.topbar{min-height:64px; flex:0 0 auto; background:var(--card); border-bottom:1px solid var(--line);
+  display:flex; align-items:center; flex-wrap:wrap; gap:14px; padding:12px 22px}
+.topbar h2{margin:0; font-size:14px; color:var(--head); font-weight:600; white-space:nowrap; flex-shrink:0}
+.topbar .btn{flex-shrink:0}
 .topbar .spacer{flex:1}
 .progress{width:180px; height:6px; border-radius:999px; background:#e2e8f0; overflow:hidden}
 .progress > i{display:block; height:100%; width:0; background:var(--brand); transition:width .3s}
@@ -132,6 +129,18 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .tbl th{text-align:left; font-weight:600; color:var(--muted); background:#f8fafc; padding:8px 10px; border-bottom:1px solid var(--line); white-space:nowrap}
 .tbl td{padding:8px 10px; border-bottom:1px solid #f1f5f9; vertical-align:top}
 .tbl tr:last-child td{border-bottom:none}
+.classification-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:12px 0}
+.classification-table tr.needs-choice{background:#fffbeb}
+.classification-table tr.has-choice{background:#ecfdf5}
+.classification-table tr.source-error{background:#fef2f2}
+.classification-table select{width:100%;min-width:160px}
+.classification-table .choice-state{display:block;font-size:12px;font-weight:600;margin:6px 0;color:#92400e}
+.classification-table tr.has-choice .choice-state{color:#047857}
+.classification-table .source-error .choice-state{color:#b91c1c}
+.classification-table .source-text{white-space:pre-wrap;overflow-wrap:anywhere;min-width:140px}
+.classification-table td{overflow-wrap:anywhere}
+.classification-other{margin-top:16px}
+.classification-other > summary{cursor:pointer;padding:10px 0;color:var(--muted)}
 .tbl td.mono{font-family:ui-monospace,Menlo,Consolas,monospace; color:#0f172a; font-size:12px}
 .scroll{overflow-x:auto; border:1px solid var(--line); border-radius:10px}
 .cell{background:#0f172a; color:#cbd5e1; border-radius:10px; padding:14px 16px; font-size:12px;
@@ -256,12 +265,27 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .logbar .warn{color:#fcd34d}
 
 @media (max-width:1280px){
-  .topbar{gap:10px; padding:0 16px}
+  .topbar{gap:10px; padding:12px 16px}
   .progress{width:120px}
   #elapsed{display:none}
   .topbar .btn{padding:6px 10px}
 }
 @media (max-width:1100px){ .lib-grid{grid-template-columns:1fr} .stats{grid-template-columns:repeat(2,1fr)} }
+@media (max-width:900px){
+  .sidebar{width:240px;flex-basis:240px}
+  .topbar #progressWrap{display:none}
+  .topbar .counter{min-width:40px}
+  .content{padding:16px}
+  .classification-table thead{display:none}
+  .classification-table,.classification-table tbody,.classification-table tr,.classification-table td{display:block;width:100%}
+  .classification-table tr{padding:10px;border-bottom:1px solid var(--line)}
+  .classification-table td{padding:4px;border-bottom:0}
+  .classification-table select{min-width:0}
+}
+@media (max-width:700px){
+  .sidebar{width:220px;flex-basis:220px}
+  .topbar{gap:8px;padding:12px}
+}
 </style>
 </head>
 <body>
@@ -269,6 +293,9 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 <aside class="sidebar">
   <div class="brand">
     <h1>WC 翻译工作台</h1>
+    <button type="button" class="btn primary new-project" id="projBtn" title="新建或切换项目" aria-haspopup="dialog" aria-controls="projMask">
+      <span aria-hidden="true">＋</span><span>新建项目</span>
+    </button>
   </div>
 
   <div class="batch">
@@ -292,14 +319,7 @@ code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 
 <div class="main">
   <div class="topbar">
-    <div class="proj" id="projBtn" title="新建项目">
-      <div>
-        <div class="n" id="projName">听风城堡</div>
-        <div class="l" id="projLang">en → de</div>
-      </div>
-      <span style="color:#94a3b8;font-size:14px;line-height:1">＋</span>
-    </div>
-    <button class="btn ghost back" id="backBtn" hidden>← 返回工作台</button>
+    <button class="btn primary back" id="backBtn" hidden>← 返回工作台</button>
     <h2 id="topTitle">批次工作台</h2>
     <div class="spacer"></div>
     <span class="counter" id="counter">— / —</span>
@@ -372,7 +392,8 @@ const state = {
   batch:null, batches:[], stages:[], stageDefs:[],
   activeIndex:-1, follow:true, busy:false,
   pollTimer:null, pendingLibSlot:null,
-  lastStates:{}, lastBatchId:null, initialized:false
+  lastStates:{}, lastBatchId:null, initialized:false,
+  classificationDrafts:{}
 };
 
 function log(text, kind){
@@ -479,6 +500,11 @@ function applyBootstrap(data, initial=false){
     : state.stageDefs.map(s => ({...s, state:'pending', stats:[], preview:{}, checks:[], review:[],
                                  progress:0, status:'', message:'', seconds:0, download_url:''}));
 
+  if(projectChanged || batchChanged) state.classificationDrafts = {};
+  const currentClassifications = new Map(classificationRows().map(r=>[r.id,r]));
+  for(const [id, draft] of Object.entries(state.classificationDrafts)){
+    if(currentClassifications.get(id)?.record_hash !== draft.record_hash) delete state.classificationDrafts[id];
+  }
   if(!initial && projectChanged) log(`已切换项目：${state.project.name}`, '');
   if(!initial && batchChanged && state.batch) log(`已打开批次：${state.batch.name} · ${state.batch.rows} 行`, '');
   trackTransitions(initial, batchChanged);
@@ -539,7 +565,16 @@ function chooseActive(){
 function primaryAction(){
   if(!state.batch) return null;
   if(state.batch.running || state.busy) return {label:'执行中…', disabled:true};
+  if(Object.keys(state.classificationDrafts).length){
+    const index=state.stages.findIndex(s=>s.key==='classify');
+    if(state.activeIndex!==index || state.view!=='batch') return {label:'返回分类确认 →', fn:()=>openStage(index)};
+    return {label:'确认并继续 →', disabled:!classificationProgress().ready, fn:submitClassifications};
+  }
   const review = state.stages.findIndex(s=>s.state === 'review');
+  if(review >= 0 && state.stages[review].key==='classify' && state.activeIndex===review && state.view==='batch'){
+    const progress = classificationProgress();
+    return {label:'确认并继续 →', disabled:!progress.ready, fn:submitClassifications};
+  }
   if(review >= 0) return {label:'继续确认 →', fn:()=>openStage(review)};
   const failed = state.stages.findIndex(s=>s.state === 'failed');
   if(failed >= 0) return {label:'处理失败节点 →', fn:()=>openStage(failed)};
@@ -603,8 +638,7 @@ function renderSidebar(){
   $('pillRows').textContent = state.batch ? `${state.batch.rows} 行` : '— 行';
   $('pillLang').textContent = state.project ? `${state.project.src} → ${state.project.tgt}` : 'en → de';
   $('pillProj').textContent = state.project ? state.project.name : '—';
-  $('projName').textContent = state.project ? state.project.name : '—';
-  $('projLang').textContent = state.project ? `${state.project.src} → ${state.project.tgt}` : 'en → de';
+  $('projBtn').title = state.project ? `新建或切换项目 · 当前：${state.project.name}` : '新建项目';
 
   const total = state.library.length;
   const ready = state.library.filter(x=>x.ready).length;
@@ -633,7 +667,7 @@ function renderUpload(){
   const pair = state.languagePairs.find(p=>p.source_lang === state.project?.src && p.target_lang === state.project?.tgt);
   const mappingHint = pair ? `默认${pair.source_name}源文 ${pair.source_column}，${pair.target_name}目标 ${pair.target_column}。情绪从 ${pair.emotion_columns.join(' / ')} 读取。${pair.legacy_emotion_columns.length ? '兼容旧表的已知情绪标记。' : '源文列不会作为情绪。'}` : '请根据文件实际表头填写列映射。';
   $('view').innerHTML = `
-    <details style="margin-bottom:18px" open>
+    <details id="columnMapping" style="margin-bottom:18px">
       <summary>文件列映射（标准表头可留空）</summary>
       <p class="field-note">${esc(mappingHint)} 目标列不存在时补空列。</p>
       <div class="two">${[['source','源文列'],['target','目标列'],['key','Key 列'],['note','完整 Key / 备注列'],['speaker','说话人列'],['emotion','情绪列'],['bubble','气泡类型列'],['limit','长度限制列']].map(([role,label])=>`<div class="field"><label for="map_${role}">${label}</label><input id="map_${role}" data-column-role="${role}" placeholder="自动识别"></div>`).join('')}</div>
@@ -747,17 +781,28 @@ function renderPanel(i){
       ${hasPreview ? `
         <div class="stats">${(s.stats || []).map(([k,v,u])=>`
           <div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}<small>${esc(u || '')}</small></div></div>`).join('')}</div>
-        <div class="preview">${previewHTML(s.preview)}</div>` : (st==='running' ? '' : `
+        <div class="preview">${previewHTML(s.preview)}${contextEvidenceHTML(s.preview?.context_records)}</div>` : (st==='running' ? '' : `
         <div class="notice ok"><span>${st==='pending' ? '这一步还没有执行。' : '这个节点没有表格预览。'}</span></div>`)}
       ${(st==='review' && (s.review?.length || s.checks?.length)) ? reviewBox(s.review?.length ? s.review : s.checks) : ''}
       <div class="panel-foot">${footHTML(i, st, download, reportLink)}</div>
     </div>`;
   animateBars();
+  updateClassificationUI();
 }
 
 function reviewBox(checks){
   return `<div class="reviewbox"><h4>⚠ 确认前看一眼</h4>
     <ul>${checks.map(c=>`<li>${esc(c)}</li>`).join('')}</ul></div>`;
+}
+
+function contextEvidenceHTML(records){
+  if(!records?.length) return '';
+  return `<details><summary>逐行查看活动 UI、集卡与装饰物的关联依据（${records.length} 条）</summary>
+    <div class="scroll" style="max-height:560px;overflow:auto">${records.map(r=>`<details class="scene-preview">
+      <summary>${esc(r.id)} · ${esc(r.category)} · ${esc(r.status)}</summary>
+      <div class="cell">${esc(r.source_text)}\n${esc(r.context || r.warning || '没有可用上下文')}</div>
+      <details><summary>关系与图片来源</summary><div class="cell">${esc(JSON.stringify(r.context_record,null,2))}</div></details>
+    </details>`).join('')}</div></details>`;
 }
 
 function footHTML(i, st, download, report){
@@ -782,6 +827,11 @@ function footHTML(i, st, download, report){
       ${download}${report}<span class="note">前序产物已保留</span>`;
   }
   if(st === 'review'){
+    if(s.key==='classify' && (s.preview?.records || []).length){
+      return `<button class="btn primary" data-classification-submit onclick="submitClassifications()">确认并继续 →</button>
+        <button class="btn" onclick="rerunStage(${i})">重跑本步</button>${download}
+        <span class="note" data-classification-progress>请完成高亮行的选择，一次提交即可进入下一步</span>`;
+    }
     return `<button class="btn primary" onclick="confirmStage(${i})" >确认并继续 →</button>
       <button class="btn" onclick="rerunStage(${i})">重跑本步</button>
       ${download}${report}<span class="note">这一步需要你判断</span>`;
@@ -791,13 +841,46 @@ function footHTML(i, st, download, report){
       <button class="btn" onclick="restartBatch()">再跑一批</button>
       ${download}${report}<span class="note">产物在 workspace/pipeline/</span>`;
   }
+  if(s.key==='classify' && s.preview?.records?.length){
+    return `<button class="btn primary" data-classification-submit onclick="submitClassifications()">保存修改并继续 →</button>
+      <button class="btn" data-classification-next onclick="nextStage(${i})">下一节点：${esc(state.stages[i+1].title)} →</button>
+      <button class="btn" onclick="rerunStage(${i})">重跑本步</button>${download}`;
+  }
   return `<button class="btn" onclick="rerunStage(${i})">重跑本步</button>
     <button class="btn" onclick="nextStage(${i})">下一节点：${esc(state.stages[i+1].title)} →</button>
-    ${download}<span class="note">${s.confirm?'已确认':'自动通过'} · 结果只读</span>`;
+    ${download}<span class="note">${s.key==='classify'?'可逐行覆盖；保存后重新生成下游上下文':(s.confirm?'已确认':'自动通过')+' · 结果只读'}</span>`;
 }
 
 function previewHTML(p){
   if(!p || !p.type) return `<div class="empty">暂无预览</div>`;
+  if(p.type === 'classification'){
+    const rows = p.records || [];
+    const entries = rows.map((r,i)=>({r,i}));
+    const pending = entries.filter(({r})=>r.classification_status!=='confirmed');
+    const confirmed = entries.filter(({r})=>r.classification_status==='confirmed');
+    const table = entries => `<div class="scroll" style="max-height:560px;overflow:auto"><table class="tbl classification-table">
+      <thead><tr><th>位置 / 原文</th><th>分类依据</th><th>选择分类</th></tr></thead>
+      <tbody>${entries.map(({r,i})=>{
+        const draft = state.classificationDrafts[r.id];
+        const value = draft ? (draft.category ?? '') : r.classification_status==='confirmed' ? r.category : '';
+        const invalid = r.formula || !r.source_text.trim();
+        return `<tr data-classification-index="${i}">
+          <td><b>${esc(r.id)}</b><div class="source-text">${esc(r.source_text || '源文为空')}</div><small>${esc(r.key || '无 Key')}</small></td>
+          <td>${esc(r.classification_status==='inferred'?'建议：'+r.category:r.classification_status==='pending'?'需要人工判断':r.category)}
+            <div>${esc(r.basis)}</div><details><summary>查看证据</summary><div class="cell">${esc(JSON.stringify(r.evidence,null,2))}</div></details></td>
+          <td><select aria-label="${esc(r.id)} 人工分类" id="classification-${i}" onchange="chooseClassification(${i},this.value)" ${invalid?'disabled':''}>
+            <option value="">${invalid?'请先修正源文':'请选择类别'}</option>${(p.categories || []).filter(c=>c!=='待确认').map(c=>`<option value="${esc(c)}" ${c===value?'selected':''}>${esc(c)}</option>`).join('')}
+            </select><span class="choice-state" data-classification-choice="${i}"></span>
+            ${r.manual_category?`<button class="btn small ghost" data-classification-clear onclick="clearClassification(${i})">清除人工覆盖</button>`:''}</td>
+        </tr>`;
+      }).join('')}</tbody></table></div>`;
+    return `<div class="cap">分类结果 · ${pending.length} 条影响下一步推进</div>
+      <p>黄色行为待确认项，选择后变为绿色。可以连续选择，最后一次提交；选择期间不会保存或刷新页面。</p>
+      <div class="classification-toolbar"><strong data-classification-progress role="status" aria-live="polite"></strong>
+        <button class="btn primary" data-classification-submit onclick="submitClassifications()">确认并继续 →</button></div>
+      ${pending.length?table(pending):'<div class="notice ok">没有待确认的分类，可以继续；需要修改时展开下方记录。</div>'}
+      ${confirmed.length?`<details class="classification-other"><summary>已明确分类 ${confirmed.length} 条，展开核对或修改</summary>${table(confirmed)}</details>`:''}`;
+  }
   if(p.type === 'dialogue_context'){
     return `<div class="cap">${esc(p.cap || '')}</div>${(p.scenes || []).map((scene, i)=>`
       <details class="scene-preview" ${i===0?'open':''}>
@@ -929,6 +1012,11 @@ function schedulePoll(){
 
 async function action(path, body){
   if(!state.batch || state.busy) return;
+  if(Object.keys(state.classificationDrafts).length && (path==='/confirm' || path==='/run')){
+    toast('分类选择尚未提交，请先确认并继续');
+    openStage(state.stages.findIndex(s=>s.key==='classify'));
+    return;
+  }
   state.busy = true;
   renderTop();
   try {
@@ -967,6 +1055,75 @@ async function confirmStage(i){
   state.follow = true;
   log(`确认 ${state.stages[i].no} ${state.stages[i].title}`, 'ok');
   await action('/confirm', {});
+}
+
+function classificationRows(){ return state.stages.find(s=>s.key==='classify')?.preview?.records || []; }
+
+function classificationProgress(){
+  const rows = classificationRows();
+  const required = rows.filter(r=>r.classification_status!=='confirmed');
+  const selected = required.filter(r=>state.classificationDrafts[r.id]?.category && !r.formula && r.source_text.trim()).length;
+  const invalid = required.filter(r=>r.formula || !r.source_text.trim()).length;
+  const changed = Object.keys(state.classificationDrafts).length;
+  const remaining = required.length-selected;
+  return {total:required.length, selected, remaining, invalid, changed,
+    ready:!remaining && !invalid && changed>0 && !state.batch?.running && !state.busy};
+}
+
+function updateClassificationUI(){
+  const rows = classificationRows();
+  if(!$('view').querySelector('[data-classification-submit]')) return;
+  const progress = classificationProgress();
+  const message = progress.invalid ? `有 ${progress.invalid} 行源文异常，请修正文件后重新上传` :
+    progress.total ? `已选择 ${progress.selected} / ${progress.total} 条${progress.remaining?'，还剩 '+progress.remaining+' 条':'，可以确认并继续'}` :
+    progress.changed ? `已修改 ${progress.changed} 条，提交后重新生成上下文` : '没有待确认项';
+  $('view').querySelectorAll('[data-classification-progress]').forEach(el=>el.textContent=message);
+  $('view').querySelectorAll('[data-classification-submit]').forEach(el=>{
+    el.disabled=!progress.ready;
+    el.textContent=state.busy?'提交中…':progress.total?'确认并继续 →':'保存修改并继续 →';
+  });
+  $('view').querySelectorAll('[data-classification-index]').forEach(el=>{
+    const i=Number(el.dataset.classificationIndex),r=rows[i],draft=state.classificationDrafts[r.id];
+    const invalid=r.formula || !r.source_text.trim();
+    el.classList.toggle('needs-choice',r.classification_status!=='confirmed' && !draft);
+    el.classList.toggle('has-choice',!!draft && !invalid);
+    el.classList.toggle('source-error',!!invalid);
+    el.querySelector('select').disabled=!!invalid || !!state.batch?.running || state.busy;
+    el.querySelector('.choice-state').textContent=invalid?'需修正源文':draft?(draft.category?'已选择，待统一提交':'提交后清除覆盖'):r.classification_status==='confirmed'?'已确认':'影响下一步，请选择';
+  });
+  $('view').querySelectorAll('[data-classification-clear]').forEach(el=>el.disabled=!!state.batch?.running || state.busy);
+  $('view').querySelectorAll('[data-classification-next]').forEach(el=>el.disabled=progress.changed>0 || !!state.batch?.running || state.busy);
+}
+
+function chooseClassification(index, category){
+  const record=classificationRows()[index];
+  if(!record || state.busy || state.batch?.running) return;
+  if(!category || (record.classification_status==='confirmed' && category===record.category)) delete state.classificationDrafts[record.id];
+  else state.classificationDrafts[record.id]={id:record.id,record_hash:record.record_hash,category};
+  updateClassificationUI();renderTop();
+}
+
+function clearClassification(index){
+  const record=classificationRows()[index];
+  if(!record || state.busy || state.batch?.running) return;
+  state.classificationDrafts[record.id]={id:record.id,record_hash:record.record_hash,category:null};
+  $(`classification-${index}`).value='';
+  updateClassificationUI();renderTop();
+}
+
+async function submitClassifications(){
+  if(!state.batch || !classificationProgress().ready) return;
+  const changes=Object.values(state.classificationDrafts);
+  state.busy=true;updateClassificationUI();renderTop();
+  try{
+    await api(`/api/pipeline/projects/${state.project.id}/batches/${state.batch.id}/classifications`,{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({changes})
+    });
+    state.classificationDrafts={};state.follow=true;
+    log(`已统一确认 ${changes.length} 条分类，继续生成上下文`, 'ok');
+    await refresh();
+  }catch(error){ toast(error.message);log(error.message,'bad');await refresh(); }
+  finally{state.busy=false;updateClassificationUI();renderTop();}
 }
 
 async function retryStage(i, thenContinue){

@@ -388,7 +388,8 @@ class LanguageSupportTests(unittest.TestCase):
             result = run_context({'game': {}, 'language': ZH.as_dict(), 'config_path': self.config}, source, self.root / 'story_context.xlsx')
         self.assertEqual(result['state'], 'completed', result.get('status'))
         self.assertEqual(req.call_count, 4)
-        self.assertEqual([r['key'] for r in req.call_args_list[0].args[0]['dialogue']], keys[1::-1])
+        scene = next(call.args[0] for call in req.call_args_list if call.args[0]['group'].endswith('/story3_1_begin'))
+        self.assertEqual([r['key'] for r in scene['dialogue']], keys[1::-1])
 
 
 if __name__ == '__main__':

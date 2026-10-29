@@ -3,7 +3,7 @@
 客户导出的表格与模块期望的形状之间常有落差，本模块负责抹平，不改动任何业务判断：
 
 - 去掉整列为空的多余列（导出常带几百个空列，会让每个产物后面挂一长串 None）
-- 补出 `speaker` 列：说话人名写进 key 列时，分类器无法识别对白
+- 仅在 key 中识别到说话人时补出 `speaker` 列；非对白文件不新增空列
 
 产出的文件与输入在语义上等价，只是形状更规矩。
 """
@@ -17,7 +17,7 @@ from openpyxl import Workbook, load_workbook
 from .language import language_pair
 
 
-POLICY = 'normalize-v1'
+POLICY = 'normalize-speaker-on-demand-v2'
 
 
 class Normalizer:
@@ -106,20 +106,19 @@ class Normalizer:
         if not key_column or not self.speakers:
             return 0
 
-        speaker_column = headers.get(self.speaker_column.casefold())
-        if speaker_column is None:
-            speaker_column = max(
-                (cell.column for row in sheet.iter_rows() for cell in row if cell.value not in (None, '')),
-                default=0,
-            ) + 1
-            sheet.cell(1, speaker_column, self.speaker_column)
-
+        speaker_column = headers.get(self.speaker_column.casefold()) or self.language.column(headers, 'speaker')
         filled = 0
         for row in range(2, sheet.max_row + 1):
             key = sheet.cell(row, key_column).value
             name = str(key).strip() if key is not None else ''
             if not name or name.casefold() not in self.speakers:
                 continue
+            if speaker_column is None:
+                speaker_column = max(
+                    (cell.column for row in sheet.iter_rows() for cell in row if cell.value not in (None, '')),
+                    default=0,
+                ) + 1
+                sheet.cell(1, speaker_column, self.speaker_column)
             if sheet.cell(row, speaker_column).value not in (None, ''):
                 continue
             sheet.cell(row, speaker_column, name)

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
@@ -72,13 +73,13 @@ PREFLIGHT_STAGE = {
 STAGES = (
     {'key': 'normalize', 'no': '00', 'title': '规范化', 'sub': '先修表，再动内容',
      'artifact': '00-规范化.xlsx', 'confirm': False,
-     'desc': '客户导出的工作表常带只有格式、没有内容的空列；说话人写在 key 列里，分类器认不出对白。这一步补齐形状，不改业务判断。'},
+     'desc': '清理尾部空列；仅当 Key 中识别到说话人时补充 speaker。非对白文件不要求或新增空 speaker 列，原文件已有列保持。'},
     {'key': 'classify', 'no': '01', 'title': '分类', 'sub': '决定下游用哪套提示词',
      'artifact': '01-分类.xlsx', 'confirm': False,
-     'desc': '按项目规则给每一行打文本类型。它同时决定下游选哪套提示词，以及长度校验对哪些行生效。'},
+     'desc': '结合 Key、连续格式区块、文本特征与同区块已确认记录分类。证据明确时自动通过；推断或冲突需逐行确认，可覆盖或清除人工分类。'},
     {'key': 'context', 'no': '02', 'title': '上下文', 'sub': '关联原文，通读对白情景',
      'artifact': '02-上下文.xlsx', 'confirm': True,
-     'desc': 'UI、集卡和装饰物关联原文。活动对白按完整 Key 分组、句序排序，结合资料库的人物人设、人物关系与同段源文，生成「场景结构＋情境与基调」，同组共用一份；两类原文依据可展开核对。'},
+     'desc': 'UI 按活动与功能、集卡按套组、装饰物按物件与对白关联。归属可靠的图片会发送到配置的视觉模型，补充可见特征与不确定项；活动对白保留整段场景分析。'},
     {'key': 'term', 'no': '03', 'title': '术语', 'sub': '词边界匹配，长词优先',
      'artifact': '03-术语.xlsx', 'confirm': False,
      'desc': '按当前源语言匹配术语，中文支持连续文本，英文保留词边界与词形规则。长词优先，候选交给下一步语境筛选。'},
@@ -529,7 +530,41 @@ class PipelineService:
             state['active_stage'] = None
         for key in ORDER:
             state['stages'].setdefault(key, {'state': 'pending', 'progress': 0, 'status': ''})
+        if not state.get('running') and batch_id not in self.running:
+            for key in ('classify', 'context'):
+                stage = state['stages'][key]
+                if stage.get('state') in ('done', 'review') and stage.get('dependency_id'):
+                    if stage['dependency_id'] != self._dependency_id(project_id, state, key):
+                        self._invalidate_after(state, key)
+                        shutil.rmtree(self._batch_dir(project_id, batch_id) / 'context_scenes', ignore_errors=True)
+                        shutil.rmtree(self._batch_dir(project_id, batch_id) / 'context_images', ignore_errors=True)
+                        state['stages'][key]['message'] = '分类、关联规则或输入证据已变化，请重跑本步'
+                        state['active_stage'] = key
+                        self._save_batch(project_id, state)
+                        break
         return state
+
+    def _dependency_id(self, project_id, batch, key):
+        folder = self._batch_dir(project_id, batch['id'])
+        files = [self._key_rules_path(), self.root / 'core_tools/key_classifier.py',
+                 self.root / 'core_tools/layout_segmenter.py', self.root / 'core_tools/context_processor.py',
+                 folder / ARTIFACTS['normalize'], folder / 'classification_overrides.json']
+        project = self._project(self._read_store(), project_id)
+        if key == 'context':
+            files.extend([folder / ARTIFACTS['classify'], folder / '01-分类.classification.json',
+                          self.root / 'core_tools/dialogue_context.py', self.root / 'core_tools/vision_context.py'])
+            for slot in ('world', 'cast', 'relationships', 'style'):
+                path = self._resolve(((project.get('library') or {}).get(slot) or {}).get('path'))
+                if path:
+                    files.append(path)
+        payload = {'language': language_pair(batch.get('language') or project).cache_identity(),
+                   'files': [(str(path), hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None)
+                             for path in files]}
+        if key == 'context':
+            config = read_json(self.root / 'config/config.json', {})
+            payload['models'] = [{k: section.get(k) for k in ('api_url', 'model_name')}
+                                 for section in (config.get('llm', {}), {**config.get('llm', {}), **config.get('vision', {})})]
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
     def _save_batch(self, project_id: str, state: dict):
         state['updated_at'] = now()
@@ -636,6 +671,7 @@ class PipelineService:
             artifact = self._batch_dir(project_id, state['id']) / meta['artifact']
             item = {
                 **meta,
+                'confirm': meta['confirm'] or (meta['key'] == 'classify' and status == 'review'),
                 'desc': info.get('desc', meta['desc']),
                 'state': status,
                 'skipped': bool(info.get('skipped')),
@@ -643,6 +679,7 @@ class PipelineService:
                 'message': info.get('message', ''),
                 'stats': info.get('stats', []),
                 'preview': info.get('preview', {}),
+                'context_records': info.get('context_records', []),
                 'checks': info.get('checks', []),
                 'review': info.get('review', []),
                 'progress': info.get('progress', 100 if status in ('done', 'review', 'failed') else 0),
@@ -779,6 +816,7 @@ class PipelineService:
             'tm_cache_dir': self.workspace / 'tm_cache' / language_pair(project).key,
             'batch_dir': str(self._batch_dir(project['id'], batch['id'])),
             'batch_name': batch.get('name', ''),
+            'source_format': Path(batch.get('name', '')).suffix.lower(),
         }
 
     def _input_for(self, project_id: str, batch: dict, key: str) -> Path:
@@ -803,6 +841,8 @@ class PipelineService:
                 raise PipelineError('批次不存在')
             if batch.get('running') or batch_id in self.running:
                 raise PipelineError('这个批次正在执行，请等当前节点结束')
+            if stage in ORDER and ORDER.index(stage) > ORDER.index('classify') and batch['stages']['classify']['state'] != 'done':
+                raise PipelineError('请先完成分类及人工确认，再运行下游节点')
             if mode == 'run' and any(stage.get('state') == 'review'
                                      for stage in batch['stages'].values()):
                 raise PipelineError('还有节点等待确认，请先确认')
@@ -822,9 +862,10 @@ class PipelineService:
                     cache = self._batch_dir(project['id'], batch_id) / 'context_scenes'
                     if cache.exists():
                         shutil.rmtree(cache)
+                    shutil.rmtree(self._batch_dir(project['id'], batch_id) / 'context_images', ignore_errors=True)
                 self._invalidate_after(batch, stage)
                 start_key = stage
-                chain = False
+                chain = bool(then_continue)
                 auto_confirm = False
             elif mode == 'retry':
                 if not stage or stage not in STAGE_BY_KEY:
@@ -870,6 +911,42 @@ class PipelineService:
             thread.start()
             return self._batch_view(project['id'], batch)
 
+    def save_classifications(self, project_id: str, batch_id: str, changes) -> dict:
+        from core_tools.key_classifier import CATEGORIES
+        with self.lock:
+            project = self._project(self._read_store(), project_id)
+            batch = self._load_batch(project['id'], batch_id)
+            if not batch or batch.get('running') or batch_id in self.running:
+                raise PipelineError('批次不存在或正在执行，不能修改分类')
+            records = {r['id']: r for r in batch['stages']['classify'].get('classification_records', [])}
+            if not records:
+                raise PipelineError('请先运行新版分类节点')
+            if not isinstance(changes, list) or not changes or len(changes) > len(records):
+                raise PipelineError('请提供需要确认的分类记录')
+            folder = self._batch_dir(project_id, batch_id)
+            path = folder / 'classification_overrides.json'
+            overrides = read_json(path, {})
+            seen = set()
+            for change in changes:
+                if not isinstance(change, dict) or not isinstance(change.get('id'), str) or 'category' not in change:
+                    raise PipelineError('分类修改格式无效')
+                record = records.get(change.get('id'))
+                if not record or record['id'] in seen or change.get('record_hash') != record['record_hash']:
+                    raise PipelineError('记录已变化或不属于当前批次，请刷新后重试')
+                category = change.get('category')
+                if category not in (*CATEGORIES, None):
+                    raise PipelineError('只能指定四种已有分类，或清除人工覆盖')
+                if record.get('formula') or not record['source_text'].strip():
+                    raise PipelineError('请先修正异常源文，不能通过指定分类跳过')
+                seen.add(record['id'])
+                if category is None:
+                    overrides.pop(record['id'], None)
+                else:
+                    overrides[record['id']] = {'category': category, 'record_hash': record['record_hash'],
+                                               'confirmed_at': now()}
+            write_json(path, overrides)
+            return self.start(project_id, batch_id, stage='classify', mode='rerun', then_continue=True)
+
     def confirm(self, project_id: str, batch_id: str) -> dict:
         with self.lock:
             store = self._read_store()
@@ -882,6 +959,10 @@ class PipelineService:
             review = next((key for key in ORDER if batch['stages'][key].get('state') == 'review'), None)
             if not review:
                 raise PipelineError('没有等待确认的节点')
+            if review == 'classify':
+                records = batch['stages']['classify'].get('classification_records', [])
+                if any(r.get('classification_status') != 'confirmed' for r in records):
+                    raise PipelineError('请为所有待确认行选择类别，再统一确认并继续')
             batch['stages'][review].update(state='done', confirmed_at=now(), progress=100)
             next_key = next((key for key in ORDER if batch['stages'][key].get('state') == 'pending'), None)
             if next_key:
@@ -913,6 +994,11 @@ class PipelineService:
             folder = self._batch_dir(project['id'], batch_id)
             for artifact in ARTIFACTS.values():
                 (folder / artifact).unlink(missing_ok=True)
+            for name in ('01-分类.classification.json', '02-上下文.context.json', '02-上下文.zip'):
+                (folder / name).unlink(missing_ok=True)
+            shutil.rmtree(folder / 'context_scenes', ignore_errors=True)
+            shutil.rmtree(folder / 'context_images', ignore_errors=True)
+            shutil.rmtree(folder / '02-上下文_assets', ignore_errors=True)
             (folder / '06-自检报告.md').unlink(missing_ok=True)
             batch['stages'] = {key: {'state': 'pending', 'progress': 0, 'status': ''} for key in ORDER}
             batch['running'] = False
@@ -926,10 +1012,21 @@ class PipelineService:
         for key in ORDER[index + 1:]:
             batch['stages'][key] = {'state': 'pending', 'progress': 0, 'status': ''}
             (folder / ARTIFACTS[key]).unlink(missing_ok=True)
+            (folder / ARTIFACTS[key]).with_suffix('.classification.json').unlink(missing_ok=True)
+            (folder / ARTIFACTS[key]).with_suffix('.context.json').unlink(missing_ok=True)
         batch['stages'][stage] = {'state': 'pending', 'progress': 0, 'status': ''}
-        if stage in ('context', 'tm'):
+        if stage in ('classify', 'context', 'tm'):
             # Model reruns must not expose the previous output after a failure.
             (folder / ARTIFACTS[stage]).unlink(missing_ok=True)
+        if index <= ORDER.index('context'):
+            (folder / ARTIFACTS['context']).with_suffix('.context.json').unlink(missing_ok=True)
+            if stage != 'context':
+                shutil.rmtree(folder / 'context_scenes', ignore_errors=True)
+                shutil.rmtree(folder / 'context_images', ignore_errors=True)
+            shutil.rmtree(folder / '02-上下文_assets', ignore_errors=True)
+            (folder / '02-上下文.zip').unlink(missing_ok=True)
+        if index <= ORDER.index('classify'):
+            (folder / ARTIFACTS['classify']).with_suffix('.classification.json').unlink(missing_ok=True)
 
     def _worker(self, project_id: str, batch_id: str, start_key: str,
                 chain: bool, auto_confirm: bool):
@@ -1018,6 +1115,11 @@ class PipelineService:
                 return
             summary = self._summarize(key, project_id, batch, key, task, source, output, seconds)
             confirm = STAGE_BY_KEY[key]['confirm'] and not auto_confirm and not task.get('skipped')
+            if key == 'classify':
+                confirm = bool(task.get('review_required'))
+                stage['classification_records'] = task.get('records', [])
+            if key in ('classify', 'context'):
+                stage['dependency_id'] = self._dependency_id(project_id, batch, key)
             stage.update(state='review' if confirm else 'done', progress=100,
                          skipped=bool(task.get('skipped')),
                          message=message, status=message, seconds=seconds,
@@ -1052,43 +1154,62 @@ class PipelineService:
             except Exception:
                 source_rows = 0
             stats = [['输入行数', source_rows, ''], ['删除空列', task.get('trimmed_columns', 0), ''],
-                     ['补出 speaker', task.get('speaker_rows', 0), ''], ['输出列', len(header), '']]
+                     ['补充说话人', task.get('speaker_rows', 0), ' 行'], ['输出列', len(header), '']]
+            speaker_col = pair.column(pair.headers(header), 'speaker')
+            speaker_header = header[speaker_col - 1] if speaker_col else None
             sample = []
             for row in rows[:4]:
-                sample.append([text(column(row, 'limit')), text(column(row, 'key')),
-                               snippet(column(row, *pair.aliases('source')), 80), text(column(row, 'speaker'))])
-            preview = {'type': 'table', 'cap': '产物前 4 行（新增 speaker 列）',
-                       'head': ['limit', 'key', pair.aliases('source')[0], 'speaker'], 'rows': sample}
+                values = [text(column(row, *pair.aliases('limit'))), text(column(row, *pair.aliases('key'))),
+                          snippet(column(row, *pair.aliases('source')), 80)]
+                if speaker_header:
+                    values.append(text(column(row, speaker_header)))
+                sample.append(values)
+            preview = {'type': 'table', 'cap': '产物前 4 行',
+                       'head': ['limit', 'key', pair.aliases('source')[0]] + ([speaker_header] if speaker_header else []), 'rows': sample}
             return {'stats': stats, 'preview': preview}
         if key == 'classify':
             counts = task.get('counts', {})
+            needs_review = sum(r['classification_status'] != 'confirmed' for r in task.get('records', []))
             total_rows = sum(counts.values()) or total
             stats = [['总行数', total_rows, ''], ['活动对白', counts.get('活动对白', 0), ''],
-                     ['集卡名称', counts.get('集卡名称', 0), ''], ['待确认', counts.get('待确认', 0), '']]
+                     ['集卡名称', counts.get('集卡名称', 0), ''], ['需人工确认', needs_review, '']]
             bars = [[name, counts.get(name, 0), CATEGORY_COLORS.get(name, '#64748b')]
                     for name in ('集卡名称', '活动对白', '活动 UI 与商店文案', '装饰物名称')]
-            return {'stats': stats, 'preview': {'type': 'bars', 'cap': '四类分布', 'rows': bars}}
+            records = task.get('records', [])
+            return {'stats': stats, 'preview': {'type': 'classification', 'cap': '逐行分类与依据',
+                    'records': sorted(records, key=lambda r:r['classification_status']=='confirmed'),
+                    'categories': list(CATEGORY_COLORS.keys())},
+                    'checks': ['置信度是规则排序指标，尚未校准为正确概率',
+                               '选择只暂存在当前页面；统一提交后更新分类，并作废旧 Context 与下游产物']}
         if key == 'context':
             with_context = [row for row in rows if text(column(row, 'context')).strip()]
             dialogue = [row for row in rows if text(column(row, '分类')).strip() == '活动对白']
             empty_dialogue = sum(1 for row in dialogue if not text(column(row, 'context')).strip())
             scenes = task.get('dialogue_scenes', [])
+            context_records = [r for r in task.get('records', []) if r.get('category') != '活动对白']
             cluster = max((r.get('related_count', 0) for r in task.get('records', [])), default=0)
             stats = [['有 Context', len(with_context), ' 行'], ['无 Context', total - len(with_context), ' 行'],
                      ['活动对白', len(dialogue), ' 行'], ['场景分析', len(scenes), ' 组']]
+            if task.get('vision_images'):
+                stats.append(['视觉分析', len(task['vision_images']), ' 张'])
             sample = next((row for row in with_context), None)
             if sample:
                 preview_text = f"{text(column(sample, 'key'))}\n{text(column(sample, 'context'))[:900]}"
             else:
                 preview_text = '这一批没有生成 Context。'
-            checks = [f'最大关联组 {cluster} 条，请核对是否跨活动或跨段误关联',
-                      f'对白 {len(dialogue) - empty_dialogue} 条有 Context，{empty_dialogue} 条为空；空值需核对完整 Key 和同段原文',
-                      '对白 Context 是模型场景判断，请展开对白和人物资料依据核对语气、指代及叙事方式']
+            checks = [f'最多引用 {cluster} 条关联记录，请核对活动、套组与物件边界',
+                      '非对白 Context 可展开逐行核对来源；缺图片或归属不明不会补造物件信息']
+            if task.get('vision_images'):
+                checks.append('图片视觉描述是模型观察，请对照原图核对；活动图和套组图不等于单个物件的外观证据')
+            if dialogue:
+                checks.extend([f'对白 {len(dialogue) - empty_dialogue} 条有 Context，{empty_dialogue} 条为空；请核对完整 Key 和同段原文',
+                               '对白场景判断需结合原文和人物资料核对语气、指代及叙事方式'])
             if scenes:
                 labels = [m['label'] for m in scenes[0].get('materials', [])]
                 checks.append('本次全文读取资料：' + ('、'.join(labels) if labels else '未提供人物或背景资料'))
             preview = ({'type': 'dialogue_context', 'cap': '对白场景与原文依据', 'scenes': scenes}
                        if scenes else {'type': 'code', 'cap': '一条 Context 样例', 'text': preview_text})
+            preview['context_records'] = context_records
             notices = [f"{r['sheet']} 第{r['row']}行：{r['warning']}" for r in task.get('records', [])
                        if r['category'] == '活动对白' and r.get('status') == '待确认']
             checks.extend(notices[:5])

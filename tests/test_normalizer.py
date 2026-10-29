@@ -80,6 +80,27 @@ class NormalizerTests(unittest.TestCase):
         headers = [c.value for c in result[1] if c.value is not None]
         self.assertNotIn('speaker', headers)
 
+    def test_non_dialogue_does_not_add_empty_speaker_with_configured_names(self):
+        source = self.save(self.build([(30, 'cat_multiboards_title', 'Cats', 'Katzen'),
+                                       (30, 'Ahalloween_set1_name', 'Autumn', 'Herbst')]))
+        result = self.run_normalizer(source, speakers=['Chad', 'Max'])
+        self.assertEqual([cell.value for cell in result[1]],
+                         ['limit', 'key', 'game_text_en', 'game_text_de'])
+
+    def test_existing_speaker_alias_is_used_without_adding_another_column(self):
+        source = self.save(self.build([(None, 'Chad', 'Hello', None, 'Provided Name')],
+            headers=('limit', 'key', 'game_text_en', 'game_text_de', '说话人')))
+        result = self.run_normalizer(source, speakers=['Chad'])
+        self.assertEqual(result.max_column, 5)
+        self.assertEqual(result['E2'].value, 'Provided Name')
+
+    def test_existing_blank_speaker_column_is_preserved_for_non_dialogue(self):
+        source = self.save(self.build([(30, 'cat_multiboards_title', 'Cats', None, None)],
+            headers=('limit', 'key', 'game_text_en', 'game_text_de', 'speaker')))
+        result = self.run_normalizer(source, speakers=['Chad'])
+        self.assertEqual(result['E1'].value, 'speaker')
+        self.assertIsNone(result['E2'].value)
+
 
 if __name__ == '__main__':
     unittest.main()

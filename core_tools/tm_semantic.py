@@ -22,6 +22,7 @@ from rank_bm25 import BM25Okapi
 
 
 from .language import language_pair, source_tokens
+from .model_concurrency import model_slot, worker_count
 
 
 SEMANTIC_POLICY = 'wc-pair-semantic-v2'
@@ -45,8 +46,8 @@ class SemanticTMRetriever:
                         and endpoint.scheme in ('https', 'http') and endpoint.hostname):
                     raise ValueError(f'TM {label}配置不完整，请检查 config/config.json')
             self.batch_size = max(1, min(128, int(self.embedding.get('batch_size', 10))))
-            self.embed_workers = max(1, min(8, int(self.embedding.get('max_workers', 5))))
-            self.rank_workers = max(1, min(8, int(self.rerank_config.get('max_workers', 5))))
+            self.embed_workers = worker_count(self.embedding)
+            self.rank_workers = worker_count(self.rerank_config)
             self.embed_timeout = max(1, float(self.embedding.get('timeout', 60)))
             self.rank_timeout = max(1, float(self.rerank_config.get('timeout', 30)))
             self.recall_k = max(1, min(100, int(self.rerank_config.get('recall_k', 30))))
@@ -67,17 +68,19 @@ class SemanticTMRetriever:
     def status(self):
         return {'ready': True, 'embedding_model': self.embedding['model_name'],
                 'rerank_model': self.rerank_config['model_name'], 'recall_k': self.recall_k,
-                'final_k': self.final_k, 'threshold': self.threshold, 'cache_hit': self.cache_hit}
+                'final_k': self.final_k, 'threshold': self.threshold, 'cache_hit': self.cache_hit,
+                'embedding_workers': self.embed_workers, 'rerank_workers': self.rank_workers}
 
     def _post(self, section, payload, timeout, label):
         if not hasattr(self._local, 'session'):
             self._local.session = requests.Session()
         for attempt in range(self.retries):
             try:
-                response = self._local.session.post(
-                    section['api_url'], json=payload,
-                    headers={'Authorization': f"Bearer {section['api_key']}", 'Content-Type': 'application/json'},
-                    timeout=timeout, allow_redirects=False)
+                with model_slot(section['api_url'], section['model_name']):
+                    response = self._local.session.post(
+                        section['api_url'], json=payload,
+                        headers={'Authorization': f"Bearer {section['api_key']}", 'Content-Type': 'application/json'},
+                        timeout=timeout, allow_redirects=False)
             except (requests.Timeout, requests.ConnectionError):
                 failure = '请求超时或连接失败'
             except requests.RequestException as error:

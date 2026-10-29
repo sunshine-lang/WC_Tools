@@ -1,4 +1,5 @@
 import json
+import threading
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -73,7 +74,7 @@ class DialogueContextTests(unittest.TestCase):
         task, request = self.run_scene(path)
         self.assertEqual(task['state'], 'completed', task.get('status'))
         self.assertEqual(request.call_count, 2)
-        payload = request.call_args_list[0].args[0]
+        payload = next(call.args[0] for call in request.call_args_list if call.args[0]['group'].endswith('/3'))
         self.assertEqual([r['key'] for r in payload['dialogue']], [PREFIX + '3_2', PREFIX + '3_10'])
         self.assertEqual([r['bubble_type'] for r in payload['dialogue']], ['1', '2'])
         self.assertEqual(payload['dialogue'][1]['emotion'], 'thinking')
@@ -87,7 +88,7 @@ class DialogueContextTests(unittest.TestCase):
         self.assertIn('\n\n【情境与基调】\n', records[0]['context'])
         self.assertNotIn('[关联语境参考]', records[0]['context'])
         self.assertIn('We found the missing key!', records[3]['context'])
-        self.assertIn('[关联语境参考]', records[4]['context'])
+        self.assertIn('【当前文本功能】', records[4]['context'])
         self.assertIn('未提供气泡类型', records[2]['warning'])
         self.assertEqual(task['dialogue_model_requests'], 2)
         output = load_workbook(task['result_file'])
@@ -154,7 +155,7 @@ class DialogueContextTests(unittest.TestCase):
         failed, _ = self.run_scene(path, invalid)
         self.assertEqual(failed['state'], 'error')
         diagnostics = list((self.root / 'context_scenes').glob('*.failed.json'))
-        self.assertEqual(len(diagnostics), 1)
+        self.assertEqual(len(diagnostics), 2)
         saved = json.loads(diagnostics[0].read_text())
         self.assertIn('不存在的人物资料', saved['error'])
         self.assertNotIn('TEST_SECRET', diagnostics[0].read_text())
@@ -171,6 +172,15 @@ class DialogueContextTests(unittest.TestCase):
         task = run_context({'game': {}, 'config_path': self.root / 'missing.json'}, path, self.root / 'output.xlsx')
         self.assertEqual(task['state'], 'completed', task.get('status'))
         self.assertEqual(task['dialogue_model_requests'], 0)
+
+    def test_independent_scenes_run_concurrently(self):
+        barrier = threading.Barrier(2)
+        def respond(payload):
+            barrier.wait(timeout=3)
+            return self.response(payload)
+        task, request = self.run_scene(self.source(), respond)
+        self.assertEqual(task['state'], 'completed', task.get('status'))
+        self.assertEqual(request.call_count, 2)
 
     def test_analysis_validates_quotes_and_shows_uncertainty_outside_context(self):
         line = {'key': PREFIX + '3_1', 'speaker': 'Max_remote', 'emotion': 'thinking', 'bubble': '1',

@@ -12,6 +12,7 @@ import requests
 
 
 from .language import language_pair
+from .model_concurrency import model_slot, worker_count
 
 
 DIALOGUE_CONTEXT_POLICY = 'wc-dialogue-scene-v3'
@@ -72,6 +73,7 @@ class DialogueContextAnalyzer:
             self.api_url = cfg.get('api_url', '')
             self.api_key = cfg.get('api_key', '')
             self.model = cfg.get('model_name', '')
+            self.max_workers = worker_count(cfg)
             endpoint = urlsplit(self.api_url)
             if not (self.api_key and self.model and endpoint.hostname and endpoint.scheme in ('http', 'https')):
                 raise ValueError()
@@ -101,9 +103,10 @@ class DialogueContextAnalyzer:
                              {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}]}
         for attempt in range(3):
             try:
-                response = requests.post(self.api_url, json=body,
-                                         headers={'Authorization': f'Bearer {self.api_key}'},
-                                         timeout=90, allow_redirects=False)
+                with model_slot(self.api_url, self.model):
+                    response = requests.post(self.api_url, json=body,
+                                             headers={'Authorization': f'Bearer {self.api_key}'},
+                                             timeout=90, allow_redirects=False)
             except (requests.Timeout, requests.ConnectionError):
                 failure = '请求超时或连接失败'
             except requests.RequestException as error:
@@ -130,13 +133,13 @@ class DialogueContextAnalyzer:
         return {name: record[name] for name in ('key', 'speaker', 'emotion', 'source_text')} | {
             'bubble_type': record['bubble']}
 
-    def analyze(self, group, dialogue, references, input_warnings):
+    def analyze(self, group, dialogue, references, input_warnings, cache_scope=None):
         payload = {'language': self.language.as_dict(), 'group': group, 'dialogue': [self.source(r) for r in dialogue],
                    'references': [self.source(r) | {'kind': '关联名称' if '/decor/' in r['group'] else '跨段线索'}
                                   for r in references],
                    'character_materials': self.materials_payload,
                    'input_warnings': [*input_warnings, *self.material_warnings]}
-        identity = json.dumps({'policy': DIALOGUE_CONTEXT_POLICY, 'prompt': SYSTEM_PROMPT,
+        identity = json.dumps({'policy': DIALOGUE_CONTEXT_POLICY, 'prompt': SYSTEM_PROMPT, 'scope': cache_scope,
                                'language_rules': self.language.cache_identity(),
                                'model': self.model, 'endpoint': self.api_url, 'payload': payload},
                               ensure_ascii=False, sort_keys=True)

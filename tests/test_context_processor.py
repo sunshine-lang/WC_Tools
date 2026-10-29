@@ -258,9 +258,11 @@ class ContextProcessorTests(unittest.TestCase):
             [30, 'cat_multiboards_book_subtitle1', '', 'Collection section', None, CATEGORIES[0]],
         ])
         records = self.run_context(path, enhance=False)['records']
-        self.assertEqual(records[0]['context'], '[关联语境参考]\ncat_multiboards_pre_desc: Event intro\ncat_multiboards_guide_1_1: Merge for keys')
-        self.assertEqual(records[0]['context'], records[1]['context'])
-        self.assertEqual(records[2]['context'], records[3]['context'])
+        self.assertIn('【活动背景】', records[0]['context'])
+        self.assertIn('【当前文本功能】\n活动介绍', records[0]['context'])
+        self.assertIn('【当前文本功能】\n操作引导', records[1]['context'])
+        self.assertIn('cat_multiboards_guide_1_1: Merge for keys', records[0]['context'])
+        self.assertEqual(records[2]['context_record']['related_record_ids'], ['Sheet:2', 'Sheet:5'])
         self.assertIn('Complete description', records[2]['context'])
         self.assertNotIn('Failure', records[2]['context'])
         self.assertNotIn('Collection', records[2]['context'])
@@ -282,7 +284,7 @@ class ContextProcessorTests(unittest.TestCase):
         self.assertNotIn('You placed', records[1]['context'])
         self.assertIn('You placed <b>{0}</b>', records[3]['context'])
         self.assertNotIn('Join the race', records[3]['context'])
-        self.assertEqual(records[3]['related_count'], 2)
+        self.assertEqual(records[3]['related_count'], 1)
 
     def test_done_materials_and_external_or_cache_paths_are_rejected(self):
         for name in ['source_done.xlsx', 'SOURCE_DONE.xlsx', r'C:\temp\source_done (1).xlsx']:

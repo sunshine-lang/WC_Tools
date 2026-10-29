@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 import sys
 import time
 import traceback
@@ -29,7 +30,7 @@ WORKSPACE = ROOT / 'workspace'
 class StageResult:
     key: str
     title: str
-    state: str                 # completed | failed | skipped
+    state: str                 # completed | review | failed | skipped
     artifact: str | None
     seconds: float
     message: str = ''
@@ -85,7 +86,16 @@ def run_classify(ctx: dict, source: Path, target: Path, task: dict | None = None
     rules = ROOT / ctx['game']['key_rules']
     module = KeyClassifier(str(rules), language=ctx.get('language'))
     tasks, task = _task(task)
-    module.process(str(source), str(target), tasks, 't')
+    overrides_path = Path(ctx.get('batch_dir') or target.parent) / 'classification_overrides.json'
+    overrides = json.loads(overrides_path.read_text('utf-8')) if overrides_path.exists() else {}
+    module.process(str(source), str(target), tasks, 't', overrides=overrides,
+                   layout_available=ctx.get('source_format') != '.csv')
+    if task.get('state') == 'completed':
+        metadata = {name: task[name] for name in ('records', 'layouts', 'classification_policy')}
+        metadata['workbook_sha256'] = hashlib.sha256(target.read_bytes()).hexdigest()
+        metadata['rules_sha256'] = hashlib.sha256(rules.read_bytes()).hexdigest()
+        metadata['language_rules'] = language_pair(ctx.get('language')).cache_identity()
+        target.with_suffix('.classification.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2), 'utf-8')
     return task
 
 
@@ -96,8 +106,11 @@ def run_context(ctx: dict, source: Path, target: Path, task: dict | None = None)
     reference = ctx['game'].get('context', {}).get('reference')
     guide = ctx['game'].get('context', {}).get('guide')
     tasks, task = _task(task)
-    kwargs = {'analyze_dialogue': True, 'config_path': ctx.get('config_path'), 'materials': ctx.get('materials'),
-              'scene_cache_dir': Path(ctx.get('batch_dir') or target.parent) / 'context_scenes'}
+    kwargs = {'analyze_dialogue': True, 'analyze_images': True, 'config_path': ctx.get('config_path'), 'materials': ctx.get('materials'),
+              'scene_cache_dir': Path(ctx.get('batch_dir') or target.parent) / 'context_scenes',
+              'vision_cache_dir': Path(ctx.get('batch_dir') or target.parent) / 'context_images',
+              'classification_path': source.with_suffix('.classification.json') if ctx['game'].get('key_rules') else None,
+              'rules_path': ROOT / ctx['game']['key_rules'] if ctx['game'].get('key_rules') else None}
     if reference:
         kwargs['reference_path'] = ROOT / reference
     if guide:
@@ -184,6 +197,7 @@ class Pipeline:
         results: list[StageResult] = []
         current = source
         ctx = self.context()
+        ctx['source_format'] = source.suffix.lower()
 
         skipping = start_after is not None
         for key, title, artifact, runner in STAGES:
@@ -203,10 +217,12 @@ class Pipeline:
                 if state == 'error':
                     raise RuntimeError(message or '模块返回 error')
                 results.append(StageResult(
-                    key, title, 'completed', artifact, round(time.time() - started, 1),
+                    key, title, 'review' if task.get('review_required') else 'completed', artifact, round(time.time() - started, 1),
                     message, workbook_preview(out) if out.suffix.lower() in ('.xlsx', '.xlsm') and out.exists() else {},
                 ))
                 current = out
+                if task.get('review_required'):
+                    break
             except Exception as error:  # noqa: BLE001 — 编排层兜住一切
                 results.append(StageResult(
                     key, title, 'failed', artifact if out.exists() else None,
@@ -272,7 +288,7 @@ def main(argv: list[str] | None = None) -> int:
 
     width = max((len(r.title) for r in results), default=4)
     for r in results:
-        mark = {'completed': '完成', 'failed': '失败', 'skipped': '跳过'}[r.state]
+        mark = {'completed': '完成', 'review': '待确认', 'failed': '失败', 'skipped': '跳过'}[r.state]
         rows = r.preview.get('rows')
         print(f'  {r.title:<{width}}  {mark}  {r.seconds:>5.1f}s  '
               f'{rows if rows is not None else "-":>5} 行  {r.message[:60]}')
@@ -281,6 +297,9 @@ def main(argv: list[str] | None = None) -> int:
     if failed:
         print(f'\n阻断于：{failed[0].title}')
         return 1
+    if any(r.state == 'review' for r in results):
+        print('\n分类需要人工确认，尚未运行 Context 与后续节点。请在工作台完成确认，或核对批次分类元数据并填写 classification_overrides.json 后重跑。')
+        return 3
 
     last = results[-1] if results else None
     if last:

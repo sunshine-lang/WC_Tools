@@ -102,6 +102,12 @@ def confirm_batch(project_id, batch_id):
     return _guard(lambda: service.confirm(project_id, batch_id))
 
 
+@bp.route('/api/pipeline/projects/<project_id>/batches/<batch_id>/classifications', methods=['POST'])
+def save_classifications(project_id, batch_id):
+    data = request.get_json(silent=True) or {}
+    return _guard(lambda: service.save_classifications(project_id, batch_id, data.get('changes') if isinstance(data, dict) else None))
+
+
 @bp.route('/api/pipeline/projects/<project_id>/batches/<batch_id>/reset', methods=['POST'])
 def reset_batch(project_id, batch_id):
     return _guard(lambda: service.reset(project_id, batch_id))
